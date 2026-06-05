@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>進階宴會桌位排定系統</title>
+    <title>12人座宴會排位系統 (支援 CSV 匯入)</title>
     <style>
         :root {
             --primary-color: #4a90e2;
-            --main-table-color: #b81d24;
-            --normal-table-color: #e67e22;
+            --success-color: #2ec4b6;
+            --table-color: #b81d24;
             --bg-color: #f5f7fa;
         }
 
@@ -41,18 +41,17 @@
             color: #333;
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
+            margin-bottom: 15px;
         }
 
-        /* 功能按鈕區 */
         .controls {
             margin-bottom: 20px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
 
         .btn {
-            background-color: var(--primary-color);
             color: white;
             border: none;
             padding: 10px;
@@ -61,16 +60,31 @@
             font-weight: bold;
             font-size: 14px;
             transition: background 0.2s;
+            text-align: center;
         }
 
-        .btn:hover {
-            background-color: #357abd;
+        .btn-blue { background-color: var(--primary-color); }
+        .btn-blue:hover { background-color: #357abd; }
+        
+        .btn-green { background-color: var(--success-color); position: relative; }
+        .btn-green:hover { background-color: #24a195; }
+
+        /* 隱藏原生檔案選取器，用漂亮按鈕代替 */
+        #csvFile {
+            position: absolute;
+            left: 0; top: 0; width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
         }
 
         .guest-list {
             flex: 1;
             overflow-y: auto;
             padding-right: 5px;
+            border: 1px dashed #ccc;
+            border-radius: 6px;
+            padding: 10px;
+            background: #fafafa;
         }
 
         .guest-item {
@@ -84,33 +98,32 @@
             user-select: none;
         }
 
-        /* 右側自由移動畫布區 */
+        /* 右側畫布 */
         #canvas {
             flex: 1;
             position: relative;
             background-color: #e5e9f0;
-            /* 模擬宴會廳地毯格線 */
             background-image: linear-gradient(#d8dee9 1px, transparent 1px), linear-gradient(90deg, #d8dee9 1px, transparent 1px);
             background-size: 20px 20px;
             overflow: auto;
         }
 
-        /* 桌椅整體的動態容器 */
+        /* 12人座需要稍大的容器空間 */
         .table-container {
-            position: absolute; /* 關鍵：允許透過 JS 改變 top/left */
-            width: 300px;
-            height: 300px;
+            position: absolute;
+            width: 340px;
+            height: 340px;
             display: flex;
             justify-content: center;
             align-items: center;
-            cursor: move; /* 滑鼠移上去顯示可移動圖示 */
+            cursor: move;
             user-select: none;
         }
 
         /* 圓桌本體 */
         .table-center {
-            width: 130px;
-            height: 130px;
+            width: 150px;
+            height: 150px;
             border-radius: 50%;
             display: flex;
             flex-direction: column;
@@ -119,33 +132,30 @@
             color: white;
             font-weight: bold;
             font-size: 16px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             z-index: 2;
-            pointer-events: none; /* 讓滑鼠事件穿透給父容器處理拖拉 */
+            background-color: var(--table-color);
+            pointer-events: none;
         }
 
-        .main-table { background-color: var(--main-table-color); }
-        .normal-table { background-color: var(--normal-table-color); }
-
-        /* 桌子下方的刪除按鈕 */
         .delete-table-btn {
             font-size: 11px;
             background: rgba(0,0,0,0.3);
             border: none;
             color: white;
-            padding: 2px 6px;
+            padding: 3px 8px;
             border-radius: 4px;
-            margin-top: 4px;
+            margin-top: 6px;
             cursor: pointer;
-            pointer-events: auto; /* 恢復點擊事件 */
+            pointer-events: auto;
         }
         .delete-table-btn:hover { background: #ff4d4d; }
 
-        /* 座位 */
+        /* 座位（12人座尺寸微調） */
         .seat {
             position: absolute;
-            width: 50px;
-            height: 50px;
+            width: 52px;
+            height: 52px;
             border-radius: 50%;
             background: white;
             border: 2px dashed #ccc;
@@ -154,10 +164,14 @@
             align-items: center;
             font-size: 11px;
             color: #999;
-            transition: background 0.2s, transform 0.2s;
+            transition: background 0.15s, transform 0.15s;
             z-index: 1;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
             cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 2px;
         }
 
         .seat.occupied {
@@ -177,65 +191,72 @@
 <body>
 
     <div id="sidebar">
-        <h3>宴會控制台</h3>
+        <h3>功能選單</h3>
         <div class="controls">
-            <button class="btn" onclick="addTable('main')">+ 新增主桌 (10人)</button>
-            <button class="btn" onclick="addTable('normal')">+ 新增客桌 (8人)</button>
+            <div class="btn btn-green">
+                匯入 賓客名單 (CSV)
+                <input type="file" id="csvFile" accept=".csv" onchange="handleCSV(this)">
+            </div>
+            <button class="btn btn-blue" onclick="addTable()">+ 新增 12人圓桌</button>
         </div>
         
-        <h3>未分配賓客</h3>
-        <div class="guest-list" id="guestList"></div>
+        <h3>未分配賓客 (<span id="guestCount">0</span>)</h3>
+        <div class="guest-list" id="guestList">
+            <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">請先匯入 CSV 名單</div>
+        </div>
     </div>
 
     <div id="canvas"></div>
 
     <script>
-        // 1. 初始化資料
-        const guests = [
-            { id: "g1", name: "王大明" }, { id: "g2", name: "陳小美" },
-            { id: "g3", name: "張三峰" }, { id: "g4", name: "李四端" },
-            { id: "g5", name: "林心如" }, { id: "g6", name: "趙又廷" },
-            { id: "g7", name: "許瑋甯" }, { id: "g8", name: "彭于晏" }
-        ];
-
-        // 初始只有兩張桌子，給定初始 X, Y 座標
+        // 1. 資料結構設定
+        let guests = []; // 由 CSV 匯入動態填入
         const tables = [
-            { id: "t_1", name: "主桌", type: "main", seatCount: 10, x: 50, y: 50 },
-            { id: "t_2", name: "客桌 1", type: "normal", seatCount: 8, x: 400, y: 50 }
+            { id: "t_1", name: "第 1 桌", seatCount: 12, x: 60, y: 60 } // 預設給一桌
         ];
-
+        
         let draggedGuestId = null;
-        let tableCounter = 1; // 用於計算客桌編號
+        let tableCounter = 1;
 
-        // 2. 初始化啟動
         function init() {
             renderGuests();
             renderTables();
         }
 
-        // 3. 動態新增桌子功能
-        function addTable(type) {
+        // 2. 處理 CSV 讀取演算法
+        function handleCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                
+                // 拆分換行，並過濾掉空白行
+                const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+                
+                // 清空舊名單，重新注入新資料
+                guests = lines.map((name, index) => ({
+                    id: `g_${Date.now()}_${index}`,
+                    name: name
+                }));
+
+                renderGuests();
+            };
+            reader.readAsText(file, 'UTF-8'); // 使用 UTF-8 編碼防止中文亂碼
+        }
+
+        // 3. 新增 12 人桌功能
+        function addTable() {
+            tableCounter++;
             const id = 't_' + Date.now();
-            let name = "";
-            let seatCount = 8;
-
-            if (type === 'main') {
-                name = "主桌";
-                seatCount = 10;
-            } else {
-                tableCounter++;
-                name = `客桌 ${tableCounter}`;
-                seatCount = 8;
-            }
-
-            // 新增桌子資料，預設出現在畫布中央靠左 (100, 200)
+            
             tables.push({
                 id: id,
-                name: name,
-                type: type,
-                seatCount: seatCount,
-                x: 100 + (tables.length * 20), // 錯開位置避免重疊
-                y: 200
+                name: `第 ${tableCounter} 桌`,
+                seatCount: 12, // 強制固定 12 人
+                x: 80 + (tables.length * 25), 
+                y: 180
             });
 
             renderTables();
@@ -245,9 +266,10 @@
         function deleteTable(tableId) {
             const index = tables.findIndex(t => t.id === tableId);
             if (index !== -1) {
-                // 檢查桌上是否有人，把人退回名單
                 const container = document.querySelector(`[data-id="${tableId}"]`);
                 const occupiedSeats = container.querySelectorAll('.seat.occupied');
+                
+                // 桌上如果有人，退回名單
                 occupiedSeats.forEach(seat => {
                     guests.push({ id: 'g_' + Date.now() + Math.random(), name: seat.innerText });
                 });
@@ -261,7 +283,15 @@
         // 4. 渲染左側名單
         function renderGuests() {
             const listEl = document.getElementById('guestList');
+            const countEl = document.getElementById('guestCount');
             listEl.innerHTML = '';
+            countEl.innerText = guests.length;
+
+            if (guests.length === 0) {
+                listEl.innerHTML = `<div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">名單已全數分配完畢</div>`;
+                return;
+            }
+
             guests.forEach(guest => {
                 const item = document.createElement('div');
                 item.className = 'guest-item';
@@ -277,7 +307,7 @@
             });
         }
 
-        // 5. 渲染右側畫布（包含桌子拖拉物理邏輯）
+        // 5. 渲染右側 12 人座桌椅 (精準調整 12 人幾何圓周)
         function renderTables() {
             const canvas = document.getElementById('canvas');
             canvas.innerHTML = '';
@@ -286,13 +316,12 @@
                 const container = document.createElement('div');
                 container.className = 'table-container';
                 container.dataset.id = table.id;
-                // 設定動態座標
                 container.style.left = table.x + 'px';
                 container.style.top = table.y + 'px';
 
-                // 建立中央圓桌與刪除按鈕
+                // 桌心
                 const center = document.createElement('div');
-                center.className = `table-center ${table.type === 'main' ? 'main-table' : 'normal-table'}`;
+                center.className = 'table-center';
                 
                 const titleSpan = document.createElement('span');
                 titleSpan.innerText = table.name;
@@ -300,27 +329,30 @@
 
                 const delBtn = document.createElement('button');
                 delBtn.className = 'delete-table-btn';
-                delBtn.innerText = '刪除';
+                delBtn.innerText = '刪除桌子';
                 delBtn.onclick = (e) => {
-                    e.stopPropagation(); // 防止觸發拖拉
+                    e.stopPropagation();
                     deleteTable(table.id);
                 };
                 center.appendChild(delBtn);
-                
                 container.appendChild(center);
 
-                // 計算座位幾何環繞
-                const radius = 95; 
-                const totalSeats = table.seatCount;
+                // 12人幾何計算：半徑拉大到 115px 避免大圈座位過於擁擠
+                const radius = 115; 
+                const totalSeats = 12;
 
                 for (let i = 0; i < totalSeats; i++) {
                     const seat = document.createElement('div');
                     seat.className = 'seat';
                     seat.innerText = '空';
                     
+                    // 12等分，每格 30 度 (2 * Math.PI / 12)
                     const angle = (i * 2 * Math.PI / totalSeats) - (Math.PI / 2);
-                    const x = 150 + radius * Math.cos(angle) - 25;
-                    const y = 150 + radius * Math.sin(angle) - 25;
+                    
+                    // 容器改為 340x340，因此中心點是 (170, 170)
+                    // 減去 26 是因為座位自身寬度 52px 的一半
+                    const x = 170 + radius * Math.cos(angle) - 26;
+                    const y = 170 + radius * Math.sin(angle) - 26;
 
                     seat.style.left = `${x}px`;
                     seat.style.top = `${y}px`;
@@ -329,45 +361,35 @@
                     container.appendChild(seat);
                 }
 
-                // 【核心功能】使桌子可以被滑鼠拖拉移動位置
                 makeTableDraggable(container, table);
-
                 canvas.appendChild(container);
             });
         }
 
-        // 6. 桌子自由拖拉演算法
+        // 6. 桌子自由拖拉物理邏輯
         function makeTableDraggable(el, tableData) {
             let isDragging = false;
             let startX, startY;
 
             el.addEventListener('mousedown', (e) => {
-                // 如果點擊的是座位或刪除按鈕，不發動桌子拖拉
                 if (e.target.classList.contains('seat') || e.target.classList.contains('delete-table-btn')) return;
-
                 isDragging = true;
-                // 計算滑鼠點擊點與桌子左上角的相對距離
                 startX = e.clientX - el.offsetLeft;
                 startY = e.clientY - el.offsetTop;
-                el.style.zIndex = 5; // 拖動中的桌子顯示在最上層
+                el.style.zIndex = 5;
             });
 
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
-                
-                // 計算桌子新位置
                 let newX = e.clientX - startX;
                 let newY = e.clientY - startY;
 
-                // 限制不能拖出畫布左方和上方
                 if (newX < 0) newX = 0;
                 if (newY < 0) newY = 0;
 
-                // 更新 DOM 視覺位置
                 el.style.left = newX + 'px';
                 el.style.top = newY + 'px';
 
-                // 同步將新位置寫回資料庫(陣列)中保存
                 tableData.x = newX;
                 tableData.y = newY;
             });
@@ -380,7 +402,7 @@
             });
         }
 
-        // 7. 處理座位拖放賓客邏輯
+        // 7. 座位事件
         function setupSeatEvents(seat) {
             seat.addEventListener('dragover', (e) => {
                 e.preventDefault();
@@ -399,18 +421,19 @@
                 
                 if (guestIndex !== -1) {
                     seat.innerText = guests[guestIndex].name;
+                    seat.title = guests[guestIndex].name; // 滑鼠移上去顯示全名
                     seat.classList.add('occupied');
                     guests.splice(guestIndex, 1);
                     renderGuests();
                 }
             });
 
-            // 點擊退席
             seat.addEventListener('click', (e) => {
-                e.stopPropagation(); // 阻止事件傳給桌子觸發點擊移動
+                e.stopPropagation();
                 if (seat.classList.contains('occupied')) {
                     guests.push({ id: 'g_' + Date.now(), name: seat.innerText });
                     seat.innerText = '空';
+                    seat.removeAttribute('title');
                     seat.classList.remove('occupied');
                     renderGuests();
                 }
