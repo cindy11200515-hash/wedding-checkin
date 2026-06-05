@@ -139,14 +139,27 @@ async function loadAllData() {
 
         // 加總現場實到人數
         let totalActualGuests = 0;
-        records.forEach(r => {
-            totalActualGuests += parseInt(r.actualCount) || 0;
-            if (tableStats[r.table]) {
-                tableStats[r.table].actual += parseInt(r.actualCount) || 0;
-            } else {
-                tableStats[r.table] = { expected: 0, actual: parseInt(r.actualCount) || 0 };
-            }
-        });
+        // 渲染流水帳
+const recordTbody = document.getElementById("record-tbody");
+recordTbody.innerHTML = "";
+[...records].reverse().forEach(r => {
+    // 💡 核心防呆：如果時間字串包含 1899 或標準時間格式，用正規表達式把 24 小時制的「時:分:秒」抓出來
+    let cleanTime = r.time;
+    
+    if (r.time.includes("1899") || r.time.includes("GMT")) {
+        // 嘗試抓取字串中符合 00:00:00 格式的時間
+        let match = r.time.match(/\d{2}:\d{2}:\d{2}/);
+        if (match) {
+            cleanTime = match[0];
+        }
+    } else if (r.time.includes("T")) {
+        // 防呆：如果是 ISO 格式 (2026-06-05T18:30:00)
+        cleanTime = r.time.split("T")[1].substring(0, 8);
+    }
+
+    recordTbody.innerHTML += `<tr><td><b style="color:#555;">${cleanTime}</b></td><td><b>${r.name}</b></td><td>${r.table}</td><td>${r.expectedCount}人</td><td><b style="color:#2b8a3e;">${r.actualCount}人</b></td></tr>`;
+});
+
 
         document.getElementById("total-groups").innerText = records.length;
         document.getElementById("total-guests").innerText = totalActualGuests;
