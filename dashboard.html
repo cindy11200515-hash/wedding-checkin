@@ -212,7 +212,30 @@ async function loadAllData() {
     }
 }
 
-window.onload = loadAllData;
+// 密碼驗證功能
+function checkPassword() {
+    // 🔒 這裡可以更改你想設定的密碼（目前預設是 ）
+    const correctPassword = "1201"; 
+    
+    // 彈出視窗要求輸入密碼
+    let inputPassword = prompt("請輸入後台管理密碼：");
+    
+    if (inputPassword === correctPassword) {
+        // 密碼正確，允許讀取雲端資料
+        loadAllData();
+    } else if (inputPassword === null) {
+        // 點選取消，直接清空畫面
+        document.body.innerHTML = "<h2 style='text-align:center; margin-top:50px; color:#d63447;'>❌ 拒絕存取：您取消了密碼驗證。</h2>";
+    } else {
+        // 密碼錯誤，跳出警告並重新整理網頁再問一次
+        alert("密碼錯誤，請重新輸入！");
+        window.location.reload();
+    }
+}
+
+// 網頁一打開，改成先執行密碼檢查，通過後才會去抓試算表資料
+window.onload = checkPassword;
+
 </script>
 </body>
 </html>
