@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>12人座宴會排位系統 (支援 CSV 與手動新增)</title>
+    <title>12人座宴會排位系統 (支援自動儲存與匯出匯入)</title>
     <style>
         :root {
             --primary-color: #4a90e2;
             --success-color: #2ec4b6;
+            --export-color: #9b59b6;
+            --import-color: #34495e;
             --table-color: #b81d24;
             --bg-color: #f5f7fa;
         }
@@ -41,14 +43,14 @@
             color: #333;
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
 
         .controls {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .btn {
@@ -69,6 +71,12 @@
         
         .btn-green { background-color: var(--success-color); position: relative; }
         .btn-green:hover { background-color: #24a195; }
+
+        .btn-purple { background-color: var(--export-color); }
+        .btn-purple:hover { background-color: #8e44ad; }
+
+        .btn-dark { background-color: var(--import-color); position: relative; }
+        .btn-dark:hover { background-color: #2c3e50; }
 
         /* 手動輸入群組 */
         .input-group {
@@ -98,7 +106,8 @@
             background-color: #5a6268;
         }
 
-        #csvFile {
+        /* 隱藏原生檔案選取器 */
+        .hidden-file-input {
             position: absolute;
             left: 0; top: 0; width: 100%; height: 100%;
             opacity: 0;
@@ -234,18 +243,36 @@
             border-color: var(--primary-color);
             transform: scale(1.1);
         }
+
+        /* 儲存提示燈 */
+        .save-indicator {
+            font-size: 11px;
+            color: #aaa;
+            text-align: right;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
-        <h3>功能選單</h3>
+        <h3>賓客與桌次管理</h3>
+        <div class="save-indicator" id="saveTime">已啟用自動本機存檔</div>
         <div class="controls">
             <div class="btn btn-green">
-                匯入 賓客名單 (CSV)
-                <input type="file" id="csvFile" accept=".csv" onchange="handleCSV(this)">
+                1. 匯入 賓客名單 (CSV)
+                <input type="file" id="csvFile" class="hidden-file-input" accept=".csv" onchange="handleCSV(this)">
             </div>
-            <button class="btn btn-blue" onclick="addTable()">+ 新增 12人圓桌</button>
+            <button class="btn btn-blue" onclick="addTable()">2. 新增 12人圓桌</button>
+        </div>
+
+        <h3>備份紀錄管理</h3>
+        <div class="controls">
+            <button class="btn btn-purple" onclick="exportData()">↓ 匯出目前排位紀錄 (.json)</button>
+            <div class="btn btn-dark">
+                ↑ 匯入排位紀錄檔案 (.json)
+                <input type="file" id="importFile" class="hidden-file-input" accept=".json" onchange="importData(this)">
+            </div>
         </div>
 
         <h3>手動新增賓客</h3>
@@ -256,28 +283,108 @@
         
         <h3 style="margin-top: 15px;">未分配賓客 (<span id="guestCount">0</span>)</h3>
         <div class="guest-list" id="guestList">
-            <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">請匯入 CSV 或手動新增名單</div>
+            <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">請建立名單</div>
         </div>
     </div>
 
     <div id="canvas"></div>
 
     <script>
-        // 1. 資料結構
+        // 1. 資料結構核心
         let guests = []; 
-        const tables = [
-            { id: "t_1", name: "第 1 桌", seatCount: 12, x: 60, y: 60 } 
-        ];
-        
+        let tables = [];
+        let tableCounter = 0;
         let draggedGuestId = null;
-        let tableCounter = 1;
 
-        function init() {
+        // 2. 啟動載入：優先檢查本機是否有自動存檔紀錄
+        window.onload = function() {
+            loadFromLocalStorage();
+        };
+
+        // 【核心自動存檔功能】把當前狀態存入瀏覽器快取
+        function saveToLocalStorage() {
+            const dataToSave = {
+                guests: guests,
+                tables: tables,
+                tableCounter: tableCounter
+            };
+            localStorage.setItem('wedding_planner_save', JSON.stringify(dataToSave));
+            
+            // 更新畫面的儲存時間提示
+            const now = new Date();
+            document.getElementById('saveTime').innerText = `自動存檔成功 (${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')})`;
+        }
+
+        // 從瀏覽器快取讀取
+        function loadFromLocalStorage() {
+            const savedData = localStorage.getItem('wedding_planner_save');
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    guests = parsed.guests || [];
+                    tables = parsed.tables || [];
+                    tableCounter = parsed.tableCounter || 0;
+                } catch(e) {
+                    console.error("讀取存檔失敗，初始化預設值");
+                    initDefaultTable();
+                }
+            } else {
+                initDefaultTable();
+            }
             renderGuests();
             renderTables();
         }
 
-        // 2. CSV 讀取
+        function initDefaultTable() {
+            tables = [{ id: "t_1", name: "第 1 桌", seatCount: 12, x: 60, y: 60, seats: Array(12).fill(null) }];
+            tableCounter = 1;
+            guests = [];
+        }
+
+        // 【進階功能】匯出 JSON 備份檔案
+        function exportData() {
+            const dataStr = JSON.stringify({ guests: guests, tables: tables, tableCounter: tableCounter }, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `wedding_seating_backup_${new Date().toISOString().slice(0,10)}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        // 【進階功能】匯入 JSON 備份檔案
+        function importData(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed.guests && parsed.tables) {
+                        guests = parsed.guests;
+                        tables = parsed.tables;
+                        tableCounter = parsed.tableCounter || parsed.tables.length;
+                        
+                        // 重新渲染並強制更新本機快取
+                        renderGuests();
+                        renderTables();
+                        saveToLocalStorage();
+                        alert("紀錄還原成功！");
+                    } else {
+                        alert("檔案格式不符，無法還原。");
+                    }
+                } catch (err) {
+                    alert("檔案讀取失敗，請確認是否為正確的備份 JSON 檔。");
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+            input.value = ''; // 清空欄位
+        }
+
+        // 3. CSV 名單批量讀取
         function handleCSV(input) {
             const file = input.files[0];
             if (!file) return;
@@ -287,7 +394,6 @@
                 const text = e.target.result;
                 const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
                 
-                // 批量追加名單（不覆蓋原本手動新增的人）
                 lines.forEach((name, index) => {
                     guests.push({
                         id: `g_csv_${Date.now()}_${index}_${Math.random()}`,
@@ -296,34 +402,30 @@
                 });
 
                 renderGuests();
+                saveToLocalStorage(); // 變動時儲存
             };
             reader.readAsText(file, 'UTF-8');
-            input.value = ''; // 清空 file input 讓同檔案可重複匯入
+            input.value = '';
         }
 
-        // 【新功能】3. 手動新增單一賓客邏輯
+        // 4. 手動新增單一賓客
         function addSingleGuest() {
             const inputEl = document.getElementById('newGuestName');
             const name = inputEl.value.trim();
             
-            if (!name) {
-                alert("請先輸入賓客姓名！");
-                return;
-            }
+            if (!name) return;
 
-            // 將新姓名塞入賓客陣列
             guests.push({
                 id: `g_manual_${Date.now()}_${Math.random()}`,
                 name: name
             });
 
-            // 重新渲染左側清單並清空輸入框
             renderGuests();
+            saveToLocalStorage(); // 變動時儲存
             inputEl.value = '';
-            inputEl.focus(); // 讓游標維持在輸入框內，方便連續打字
+            inputEl.focus();
         }
 
-        // 支援手動輸入框按下 Enter 鍵直接新增
         function handleGuestInputKey(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -331,7 +433,7 @@
             }
         }
 
-        // 4. 新增桌子
+        // 5. 新增 12 人圓桌
         function addTable() {
             tableCounter++;
             const id = 't_' + Date.now();
@@ -340,31 +442,34 @@
                 id: id,
                 name: `第 ${tableCounter} 桌`,
                 seatCount: 12, 
-                x: 80 + (tables.length * 25), 
-                y: 180
+                x: 80 + (tables.length * 15), 
+                y: 150,
+                seats: Array(12).fill(null) // 初始化12個空座位資料槽
             });
 
             renderTables();
+            saveToLocalStorage(); // 變動時儲存
         }
 
         // 刪除桌子
         function deleteTable(tableId) {
             const index = tables.findIndex(t => t.id === tableId);
             if (index !== -1) {
-                const container = document.querySelector(`[data-id="${tableId}"]`);
-                const occupiedSeats = container.querySelectorAll('.seat.occupied');
-                
-                occupiedSeats.forEach(seat => {
-                    guests.push({ id: 'g_' + Date.now() + Math.random(), name: seat.innerText });
+                // 將這張桌子上所有有人坐的名字收回未分配名單
+                tables[index].seats.forEach(guestName => {
+                    if (guestName) {
+                        guests.push({ id: 'g_' + Date.now() + Math.random(), name: guestName });
+                    }
                 });
 
                 tables.splice(index, 1);
                 renderTables();
                 renderGuests();
+                saveToLocalStorage(); // 變動時儲存
             }
         }
 
-        // 5. 渲染左側名單
+        // 6. 渲染左側名單
         function renderGuests() {
             const listEl = document.getElementById('guestList');
             const countEl = document.getElementById('guestCount');
@@ -391,7 +496,7 @@
             });
         }
 
-        // 6. 渲染右側 12 人圓桌
+        // 7. 渲染右側圓桌
         function renderTables() {
             const canvas = document.getElementById('canvas');
             canvas.innerHTML = '';
@@ -418,6 +523,7 @@
                 titleSpan.addEventListener('blur', () => {
                     table.name = titleSpan.innerText.trim() || "未命名";
                     titleSpan.innerText = table.name;
+                    saveToLocalStorage(); // 桌名變動時儲存
                 });
                 titleSpan.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
@@ -441,14 +547,23 @@
                 center.appendChild(delBtn);
                 container.appendChild(center);
 
-                // 12人幾何座位
+                // 12人幾何座位渲染
                 const radius = 115; 
                 const totalSeats = 12;
 
                 for (let i = 0; i < totalSeats; i++) {
                     const seat = document.createElement('div');
                     seat.className = 'seat';
-                    seat.innerText = '空';
+                    
+                    // 檢查存檔資料中，這個座位格是否有人
+                    const currentGuestInSeat = table.seats[i];
+                    if (currentGuestInSeat) {
+                        seat.innerText = currentGuestInSeat;
+                        seat.title = currentGuestInSeat;
+                        seat.classList.add('occupied');
+                    } else {
+                        seat.innerText = '空';
+                    }
                     
                     const angle = (i * 2 * Math.PI / totalSeats) - (Math.PI / 2);
                     const x = 170 + radius * Math.cos(angle) - 26;
@@ -457,7 +572,7 @@
                     seat.style.left = `${x}px`;
                     seat.style.top = `${y}px`;
 
-                    setupSeatEvents(seat);
+                    setupSeatEvents(seat, table, i);
                     container.appendChild(seat);
                 }
 
@@ -466,7 +581,7 @@
             });
         }
 
-        // 7. 桌子自由拖拉邏輯
+        // 8. 桌子自由拖拉邏輯
         function makeTableDraggable(el, tableData) {
             let isDragging = false;
             let startX, startY;
@@ -499,12 +614,13 @@
                 if (isDragging) {
                     isDragging = false;
                     el.style.zIndex = 1;
+                    saveToLocalStorage(); // 拖拉結束放開滑鼠時儲存座標
                 }
             });
         }
 
-        // 8. 座位事件
-        function setupSeatEvents(seat) {
+        // 9. 座位拖放與點擊退席事件
+        function setupSeatEvents(seat, tableData, seatIndex) {
             seat.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 if (!seat.classList.contains('occupied')) seat.classList.add('drag-over');
@@ -521,27 +637,41 @@
                 const guestIndex = guests.findIndex(g => g.id === guestId);
                 
                 if (guestIndex !== -1) {
-                    seat.innerText = guests[guestIndex].name;
-                    seat.title = guests[guestIndex].name; 
+                    const guestName = guests[guestIndex].name;
+                    
+                    // 寫入資料庫
+                    tableData.seats[seatIndex] = guestName;
+                    
+                    // 渲染視覺
+                    seat.innerText = guestName;
+                    seat.title = guestName; 
                     seat.classList.add('occupied');
+                    
                     guests.splice(guestIndex, 1);
                     renderGuests();
+                    saveToLocalStorage(); // 入座時儲存
                 }
             });
 
             seat.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (seat.classList.contains('occupied')) {
-                    guests.push({ id: 'g_' + Date.now(), name: seat.innerText });
+                    const retiredGuestName = tableData.seats[seatIndex];
+                    
+                    // 退回資料庫
+                    guests.push({ id: 'g_' + Date.now() + Math.random(), name: retiredGuestName });
+                    tableData.seats[seatIndex] = null;
+                    
+                    // 還原視覺
                     seat.innerText = '空';
                     seat.removeAttribute('title');
                     seat.classList.remove('occupied');
+                    
                     renderGuests();
+                    saveToLocalStorage(); // 退席時儲存
                 }
             });
         }
-
-        window.onload = init;
     </script>
 </body>
 </html>
