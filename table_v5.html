@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>12人座宴會排位系統 (全功能 + 可縮放場地物件版)</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --success-color: #2ec4b6;
+            --export-color: #9b59b6;
+            --import-color: #34495e;
+            --danger-color: #e74c3c;
+            --table-color: #b81d24;
+            --bg-color: #f5f7fa;
+            
+            --stage-color: #e67e22;
+            --reception-color: #16a085;
+            --backdrop-color: #2980b9;
+            --gate-color: #7f8c8d;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: "PingFang TC", "Microsoft JhengHei", sans-serif;
+        }
+
+        body {
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg-color);
+            overflow: hidden;
+        }
+
+        /* 左側控制面板 */
+        #sidebar {
+            width: 320px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            z-index: 10;
+        }
+
+        .sidebar-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .object-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .btn {
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: background 0.2s;
+            text-align: center;
+            width: 100%;
+        }
+
+        .btn-blue { background-color: var(--primary-color); }
+        .btn-blue:hover { background-color: #357abd; }
+        
+        .btn-green { background-color: var(--success-color); position: relative; }
+        .btn-green:hover { background-color: #24a195; }
+
+        .btn-purple { background-color: var(--export-color); }
+        .btn-purple:hover { background-color: #8e44ad; }
+
+        .btn-dark { background-color: var(--import-color); position: relative; }
+        .btn-dark:hover { background-color: #2c3e50; }
+
+        .btn-red { background-color: var(--danger-color); }
+        .btn-red:hover { background-color: #c0392b; }
+
+        .btn-obj { padding: 8px; font-size: 12px; }
+        .btn-stage { background-color: var(--stage-color); }
+        .btn-stage:hover { background-color: #d35400; }
+        .btn-reception { background-color: var(--reception-color); }
+        .btn-reception:hover { background-color: #11816b; }
+        .btn-backdrop { background-color: var(--backdrop-color); }
+        .btn-backdrop:hover { background-color: #21618c; }
+        .btn-gate { background-color: var(--gate-color); }
+        .btn-gate:hover { background-color: #616a6b; }
+
+        /* 手動輸入 */
+        .input-group {
+            display: flex;
+            gap: 6px;
+        }
+
+        .input-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+        .input-input:focus { border-color: var(--primary-color); }
+
+        .btn-add-guest {
+            background-color: #6c757d;
+            width: auto;
+            padding: 8px 12px;
+        }
+
+        .hidden-file-input {
+            position: absolute;
+            left: 0; top: 0; width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .guest-list-container {
+            flex: 1;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .guest-list {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px dashed #ccc;
+            border-radius: 6px;
+            padding: 10px;
+            background: #fafafa;
+        }
+
+        .guest-item {
+            background: #f0f4f8;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            cursor: grab;
+            border-left: 5px solid var(--primary-color);
+            font-size: 13px;
+            user-select: none;
+        }
+
+        /* 右側畫布 */
+        #canvas {
+            flex: 1;
+            position: relative;
+            background-color: #e5e9f0;
+            background-image: linear-gradient(#d8dee9 1px, transparent 1px), linear-gradient(90deg, #d8dee9 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: auto;
+        }
+
+        /* 桌子 */
+        .table-container {
+            position: absolute;
+            width: 340px;
+            height: 340px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: move;
+            user-select: none;
+        }
+
+        .table-center {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 2;
+            background-color: var(--table-color);
+            position: relative;
+        }
+
+        /* 桌子的圓心刪除按鈕同樣移到右上角，避免誤觸 */
+        .table-center .corner-del-btn {
+            top: 15px;
+            right: 15px;
+        }
+
+        .editable-title {
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            overflow: hidden;
+            cursor: text;
+            transition: background 0.2s;
+            text-align: center;
+        }
+        .editable-title:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        .editable-title:focus {
+            background: white;
+            color: #333;
+            outline: none;
+        }
+
+        .table-title { max-width: 120px; }
+
+        /* 座位 */
+        .seat {
+            position: absolute;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: white;
+            border: 2px dashed #ccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 11px;
+            color: #999;
+            transition: background 0.15s, transform 0.15s;
+            z-index: 1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 2px;
+        }
+        .seat.occupied {
+            border: 2px solid var(--primary-color);
+            background: #eef5fc;
+            color: #333;
+            font-weight: 500;
+        }
+        .seat.drag-over {
+            background: #d4e6f7;
+            border-color: var(--primary-color);
+            transform: scale(1.1);
+        }
+
+        /* ─── 核心修改：場地配置物件 ─── */
+        .custom-object {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            cursor: move;
+            user-select: none;
+            border-radius: 6px;
+            z-index: 3;
+            padding: 10px;
+            
+            /* 允許自由手動拉動調整右側與下方邊界大小 */
+            overflow: hidden;
+            resize: both; 
+            min-width: 80px;
+            min-height: 45px;
+        }
+        
+        /* 內包標籤控制 */
+        .custom-object .editable-title {
+            max-width: 90%;
+            word-break: break-all;
+            white-space: normal; /* 放大後允許換行 */
+        }
+
+        /* 初始預設大小與外觀 */
+        .obj-stage { width: 280px; height: 90px; background-color: var(--stage-color); border-bottom: 5px solid #d35400; }
+        .obj-reception { width: 160px; height: 70px; background-color: var(--reception-color); }
+        .obj-backdrop { width: 220px; height: 50px; background-color: var(--backdrop-color); }
+        .obj-gate { width: 140px; height: 55px; background-color: var(--gate-color); border: 2px dashed #fff; }
+
+        /* 📌 修改：精細、不擋字的右上角圓圈刪除鈕 */
+        .corner-del-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 18px;
+            height: 18px;
+            background: rgba(0, 0, 0, 0.25);
+            color: rgba(255,255,255,0.9);
+            border: none;
+            border-radius: 50%;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            line-height: 1;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .corner-del-btn:hover {
+            background: #e74c3c;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        /* 📌 修改：字體大小調節工具列 (放左下角，不顯眼但好用) */
+        .font-sizer {
+            position: absolute;
+            bottom: 4px;
+            left: 6px;
+            display: flex;
+            gap: 2px;
+            opacity: 0; /* 平時隱藏 */
+            transition: opacity 0.2s;
+        }
+        .custom-object:hover .font-sizer,
+        .table-center:hover .font-sizer {
+            opacity: 1; /* 滑鼠移上去時才顯現，保持畫面乾淨 */
+        }
+        .font-btn {
+            width: 16px;
+            height: 16px;
+            background: rgba(255, 255, 255, 0.3);
+            border: none;
+            color: white;
+            border-radius: 3px;
+            font-size: 9px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+        }
+        .font-btn:hover { background: rgba(255, 255, 255, 0.6); color: #333; }
+
+        .save-indicator {
+            font-size: 11px;
+            color: #aaa;
+            text-align: right;
+            margin-bottom: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="sidebar-scroll">
+            <div>
+                <h3>賓客與桌次管理</h3>
+                <div class="save-indicator" id="saveTime">已啟用自動本機存檔</div>
+                <div class="controls">
+                    <div class="btn btn-green">
+                        1. 匯入 賓客名單 (CSV)
+                        <input type="file" id="csvFile" class="hidden-file-input" accept=".csv" onchange="handleCSV(this)">
+                    </div>
+                    <button class="btn btn-blue" onclick="addTable()">2. 新增 12人圓桌</button>
+                </div>
+            </div>
+
+            <div>
+                <h3>新增場地佈置物件</h3>
+                <div class="object-grid">
+                    <button class="btn btn-obj btn-stage" onclick="addCustomObject('stage', '主舞台')">■ 矩形舞台</button>
+                    <button class="btn btn-obj btn-reception" onclick="addCustomObject('reception', '招待收禮桌')">■ 收禮桌</button>
+                    <button class="btn btn-obj btn-backdrop" onclick="addCustomObject('backdrop', '拍照背板牆')">■ 背板牆</button>
+                    <button class="btn btn-obj btn-gate" onclick="addCustomObject('gate', '宴會廳大門')">雙開大門</button>
+                </div>
+            </div>
+
+            <div>
+                <h3>備份紀錄管理</h3>
+                <div class="controls">
+                    <button class="btn btn-purple" onclick="exportData()">↓ 匯出目前排位紀錄 (.json)</button>
+                    <div class="btn btn-dark">
+                        ↑ 匯入排位紀錄檔案 (.json)
+                        <input type="file" id="importFile" class="hidden-file-input" accept=".json" onchange="importData(this)">
+                    </div>
+                    <button class="btn btn-red" onclick="resetAllData()">⚠ 清空所有內容重新製作</button>
+                </div>
+            </div>
+
+            <div>
+                <h3>手動新增賓客</h3>
+                <div class="input-group">
+                    <input type="text" id="newGuestName" class="input-input" placeholder="輸入賓客姓名..." onkeydown="handleGuestInputKey(event)">
+                    <button class="btn btn-add-guest" onclick="addSingleGuest()">新增</button>
+                </div>
+            </div>
+            
+            <div class="guest-list-container">
+                <h3>未分配賓客 (<span id="guestCount">0</span>)</h3>
+                <div class="guest-list" id="guestList">
+                    <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 13px;">請建立名單</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas"></div>
+
+    <script>
+        // 資料結構核心
+        let guests = []; 
+        let tables = [];
+        let customObjects = []; 
+        let tableCounter = 0;
+        let draggedGuestId = null;
+
+        window.onload = function() {
+            loadFromLocalStorage();
+        };
+
+        // 自動儲存至 localStorage
+        function saveToLocalStorage() {
+            const dataToSave = {
+                guests: guests,
+                tables: tables,
+                customObjects: customObjects, 
+                tableCounter: tableCounter
+            };
+            localStorage.setItem('wedding_planner_resizable_save', JSON.stringify(dataToSave));
+            
+            const now = new Date();
+            document.getElementById('saveTime').innerText = `自動存檔成功 (${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')})`;
+        }
+
+        // 讀取存檔
+        function loadFromLocalStorage() {
+            const savedData = localStorage.getItem('wedding_planner_resizable_save');
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    guests = parsed.guests || [];
+                    tables = parsed.tables || [];
+                    customObjects = parsed.customObjects || []; 
+                    tableCounter = parsed.tableCounter || 0;
+                } catch(e) {
+                    initDefaultLayout();
+                }
+            } else {
+                initDefaultLayout();
+            }
+            renderGuests();
+            renderTables();
+            renderCustomObjects(); 
+        }
+
+        function initDefaultLayout() {
+            tables = [{ id: "t_1", name: "第 1 桌", seatCount: 12, x: 380, y: 180, fontSize: 16, seats: Array(12).fill(null) }];
+            customObjects = [
+                { id: "obj_init_1", type: "stage", name: "主舞台", x: 300, y: 30, width: 280, height: 90, fontSize: 15 }
+            ];
+            tableCounter = 1;
+            guests = [];
+        }
+
+        // 創建新佈置物件
+        function addCustomObject(type, defaultName) {
+            const id = 'obj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            
+            // 給予初始尺寸預設值
+            let w = 160, h = 70;
+            if(type === 'stage') { w = 280; h = 90; }
+            if(type === 'backdrop') { w = 220; h = 50; }
+            if(type === 'gate') { w = 140; h = 55; }
+
+            customObjects.push({
+                id: id,
+                type: type,
+                name: defaultName,
+                x: 350, 
+                y: 200,
+                width: w,    // 紀錄寬度
+                height: h,   // 紀錄長度
+                fontSize: 15 // 紀錄文字字體大小
+            });
+            renderCustomObjects();
+            saveToLocalStorage();
+        }
+
+        // 渲染場地佈置物件
+        function renderCustomObjects() {
+            document.querySelectorAll('.custom-object').forEach(el => el.remove());
+            const canvas = document.getElementById('canvas');
+
+            customObjects.forEach(obj => {
+                const el = document.createElement('div');
+                el.className = `custom-object obj-${obj.type}`;
+                el.style.left = obj.x + 'px';
+                el.style.top = obj.y + 'px';
+                
+                // 還原自訂的寬度、高度
+                if(obj.width) el.style.width = obj.width + 'px';
+                if(obj.height) el.style.height = obj.height + 'px';
+
+                // 可線上打字改名的標籤
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'editable-title';
+                titleSpan.innerText = obj.name;
+                titleSpan.contentEditable = true;
+                titleSpan.spellcheck = false;
+                // 還原字體大小
+                titleSpan.style.fontSize = (obj.fontSize || 15) + 'px';
+
+                titleSpan.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                titleSpan.addEventListener('blur', () => {
+                    obj.name = titleSpan.innerText.trim() || "未命名物件";
+                    titleSpan.innerText = obj.name;
+                    saveToLocalStorage();
+                });
+                titleSpan.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        titleSpan.blur();
+                    }
+                });
+
+                // 📌 修正：精緻右上角角落刪除鈕 (不卡名稱)
+                const delBtn = document.createElement('button');
+                delBtn.className = 'corner-del-btn';
+                delBtn.innerHTML = '✕';
+                delBtn.title = '刪除此物件';
+                delBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteCustomObject(obj.id);
+                };
+                delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
+                // 📌 修正：字體微調按鈕組 (+ / -)
+                const sizerDiv = document.createElement('div');
+                sizerDiv.className = 'font-sizer';
+                sizerDiv.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                
+                const plusBtn = document.createElement('button');
+                plusBtn.className = 'font-btn';
+                plusBtn.innerText = 'A+';
+                plusBtn.onclick = () => {
+                    obj.fontSize = (obj.fontSize || 15) + 1;
+                    titleSpan.style.fontSize = obj.fontSize + 'px';
+                    saveToLocalStorage();
+                };
+
+                const minusBtn = document.createElement('button');
+                minusBtn.className = 'font-btn';
+                minusBtn.innerText = 'A-';
+                minusBtn.onclick = () => {
+                    if((obj.fontSize || 15) > 9) {
+                        obj.fontSize = (obj.fontSize || 15) - 1;
+                        titleSpan.style.fontSize = obj.fontSize + 'px';
+                        saveToLocalStorage();
+                    }
+                };
+
+                sizerDiv.appendChild(plusBtn);
+                sizerDiv.appendChild(minusBtn);
+
+                el.appendChild(titleSpan);
+                el.appendChild(delBtn);
+                el.appendChild(sizerDiv);
+                
+                // 綁定拖拉與「縮放監聽」邏輯
+                makeElementDraggable(el, obj);
+                canvas.appendChild(el);
+            });
+        }
+
+        function deleteCustomObject(objId) {
+            const index = customObjects.findIndex(o => o.id === objId);
+            if (index !== -1) {
+                customObjects.splice(index, 1);
+                renderCustomObjects();
+                saveToLocalStorage();
+            }
+        }
+
+        // 渲染 12 人圓桌
+        function renderTables() {
+            document.querySelectorAll('.table-container').forEach(el => el.remove());
+            const canvas = document.getElementById('canvas');
+
+            tables.forEach(table => {
+                const container = document.createElement('div');
+                container.className = 'table-container';
+                container.style.left = table.x + 'px';
+                container.style.top = table.y + 'px';
+
+                const center = document.createElement('div');
+                center.className = 'table-center';
+                
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'editable-title table-title';
+                titleSpan.innerText = table.name;
+                titleSpan.contentEditable = true; 
+                titleSpan.spellcheck = false;
+                titleSpan.style.fontSize = (table.fontSize || 16) + 'px';
+
+                titleSpan.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                titleSpan.addEventListener('blur', () => {
+                    table.name = titleSpan.innerText.trim() || "未命名";
+                    titleSpan.innerText = table.name;
+                    saveToLocalStorage();
+                });
+                titleSpan.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        titleSpan.blur();
+                    }
+                });
+
+                // 圓桌刪除鈕一併精細化至右上角
+                const delBtn = document.createElement('button');
+                delBtn.className = 'corner-del-btn';
+                delBtn.innerHTML = '✕';
+                delBtn.title = '刪除此圓桌';
+                delBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteTable(table.id);
+                };
+                delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
+                // 圓桌字體微調器
+                const sizerDiv = document.createElement('div');
+                sizerDiv.className = 'font-sizer';
+                sizerDiv.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                
+                const plusBtn = document.createElement('button');
+                plusBtn.className = 'font-btn';
+                plusBtn.innerText = 'A+';
+                plusBtn.onclick = () => {
+                    table.fontSize = (table.fontSize || 16) + 1;
+                    titleSpan.style.fontSize = table.fontSize + 'px';
+                    saveToLocalStorage();
+                };
+
+                const minusBtn = document.createElement('button');
+                minusBtn.className = 'font-btn';
+                minusBtn.innerText = 'A-';
+                minusBtn.onclick = () => {
+                    if((table.fontSize || 16) > 10) {
+                        table.fontSize = (table.fontSize || 16) - 1;
+                        titleSpan.style.fontSize = table.fontSize + 'px';
+                        saveToLocalStorage();
+                    }
+                };
+                sizerDiv.appendChild(plusBtn);
+                sizerDiv.appendChild(minusBtn);
+
+                center.appendChild(titleSpan);
+                center.appendChild(delBtn);
+                center.appendChild(sizerDiv);
+                container.appendChild(center);
+
+                const radius = 115; 
+                const totalSeats = 12;
+
+                for (let i = 0; i < totalSeats; i++) {
+                    const seat = document.createElement('div');
+                    seat.className = 'seat';
+                    
+                    const currentGuestInSeat = table.seats[i];
+                    if (currentGuestInSeat) {
+                        seat.innerText = currentGuestInSeat;
+                        seat.title = currentGuestInSeat;
+                        seat.classList.add('occupied');
+                    } else {
+                        seat.innerText = '空';
+                    }
+                    
+                    const angle = (i * 2 * Math.PI / totalSeats) - (Math.PI / 2);
+                    const x = 170 + radius * Math.cos(angle) - 26;
+                    const y = 170 + radius * Math.sin(angle) - 26;
+
+                    seat.style.left = `${x}px`;
+                    seat.style.top = `${y}px`;
+
+                    setupSeatEvents(seat, table, i);
+                    container.appendChild(seat);
+                }
+
+                makeElementDraggable(container, table);
+                canvas.appendChild(container);
+            });
+        }
+
+        // 通用移動與縮放偵測邏輯
+        function makeElementDraggable(el, dataBind) {
+            let isDragging = false;
+            let startX, startY;
+
+            el.addEventListener('mousedown', (e) => {
+                // 防干涉檢查：點擊控制項不觸發拖拉
+                if (e.target.classList.contains('seat') || 
+                    e.target.classList.contains('editable-title') || 
+                    e.target.classList.contains('corner-del-btn') ||
+                    e.target.classList.contains('font-btn') ||
+                    e.target.classList.contains('font-sizer')) return;
+                
+                // 檢查是否點在右下角的「縮放控制格（Resize Handle）」上
+                // 點擊位置如果非常靠近右下邊界，代表使用者是要拉動大小，不發動拖曳
+                const rect = el.getBoundingClientRect();
+                if (e.clientX > rect.right - 18 && e.clientY > rect.bottom - 18) {
+                    return; 
+                }
+
+                isDragging = true;
+                startX = e.clientX - el.offsetLeft;
+                startY = e.clientY - el.offsetTop;
+                el.style.zIndex = 20; 
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                let newX = e.clientX - startX;
+                let newY = e.clientY - startY;
+
+                if (newX < 0) newX = 0;
+                if (newY < 0) newY = 0;
+
+                el.style.left = newX + 'px';
+                el.style.top = newY + 'px';
+
+                dataBind.x = newX;
+                dataBind.y = newY;
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    el.style.zIndex = el.classList.contains('custom-object') ? 3 : 1;
+                    saveToLocalStorage();
+                } else {
+                    // 如果不是拖曳，檢查使用者是否剛剛手動調整了大小（Resize）
+                    if (el.classList.contains('custom-object')) {
+                        const currentWidth = parseInt(el.style.width);
+                        const currentHeight = parseInt(el.style.height);
+                        
+                        // 如果現在尺寸跟資料庫儲存的不同，立刻更新並存檔
+                        if (currentWidth !== dataBind.width || currentHeight !== dataBind.height) {
+                            dataBind.width = currentWidth;
+                            dataBind.height = currentHeight;
+                            saveToLocalStorage();
+                        }
+                    }
+                }
+            });
+        }
+
+        // 一鍵重置
+        function resetAllData() {
+            if (!confirm("確定要清空『所有內容』嗎？此動作將無法復原！")) return;
+            if (!confirm("再次確認：您真的要刪除目前的全部場地進度，重新製作嗎？")) return;
+
+            localStorage.removeItem('wedding_planner_resizable_save');
+            initDefaultLayout();
+            renderGuests();
+            renderTables();
+            renderCustomObjects();
+            alert("系統已完全重置！");
+        }
+
+        // 備份匯出 JSON
+        function exportData() {
+            const dataStr = JSON.stringify({ guests: guests, tables: tables, customObjects: customObjects, tableCounter: tableCounter }, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            const exportFileDefaultName = `wedding_layout_advanced_${new Date().toISOString().slice(0,10)}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        // 備份匯入 JSON
+        function importData(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed.guests && parsed.tables) {
+                        guests = parsed.guests;
+                        tables = parsed.tables;
+                        customObjects = parsed.customObjects || []; 
+                        tableCounter = parsed.tableCounter || parsed.tables.length;
+                        
+                        renderGuests();
+                        renderTables();
+                        renderCustomObjects();
+                        saveToLocalStorage();
+                        alert("紀錄完整還原成功！");
+                    } else {
+                        alert("檔案格式不符。");
+                    }
+                } catch (err) {
+                    alert("檔案讀取失敗。");
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+            input.value = '';
+        }
+
+        // CSV 讀取
+        function handleCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+                
+                lines.forEach((name, index) => {
+                    guests.push({
+                        id: `g_csv_${Date.now()}_${index}_${Math.random()}`,
+                        name: name
+                    });
+                });
+
+                renderGuests();
+                saveToLocalStorage();
+            };
+            reader.readAsText(file, 'UTF-8');
+            input.value = '';
+        }
+
+        // 手動新增賓客
+        function addSingleGuest() {
+            const inputEl = document.getElementById('newGuestName');
+            const name = inputEl.value.trim();
+            if (!name) return;
+
+            guests.push({
+                id: `g_manual_${Date.now()}_${Math.random()}`,
+                name: name
+            });
+
+            renderGuests();
+            saveToLocalStorage();
+            inputEl.value = '';
+            inputEl.focus();
+        }
+
+        function handleGuestInputKey(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addSingleGuest();
+            }
+        }
+
+        // 新增桌子
+        function addTable() {
+            tableCounter++;
+            const id = 't_' + Date.now();
+            
+            tables.push({
+                id: id,
+                name: `第 ${tableCounter} 桌`,
+                seatCount: 12, 
+                x: 200 + (tables.length * 20), 
+                y: 250,
+                fontSize: 16,
+                seats: Array(12).fill(null)
+            });
+
+            renderTables();
+            saveToLocalStorage();
+        }
+
+        function deleteTable(tableId) {
+            const index = tables.findIndex(t => t.id === tableId);
+            if (index !== -1) {
+                tables[index].seats.forEach(guestName => {
+                    if (guestName) {
+                        guests.push({ id: 'g_' + Date.now() + Math.random(), name: guestName });
+                    }
+                });
+                tables.splice(index, 1);
+                renderTables();
+                renderGuests();
+                saveToLocalStorage();
+            }
+        }
+
+        function renderGuests() {
+            const listEl = document.getElementById('guestList');
+            const countEl = document.getElementById('guestCount');
+            listEl.innerHTML = '';
+            countEl.innerText = guests.length;
+
+            if (guests.length === 0) {
+                listEl.innerHTML = `<div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 13px;">名單已全數分配完畢</div>`;
+                return;
+            }
+
+            guests.forEach(guest => {
+                const item = document.createElement('div');
+                item.className = 'guest-item';
+                item.draggable = true;
+                item.innerText = guest.name;
+
+                item.addEventListener('dragstart', (e) => {
+                    draggedGuestId = guest.id;
+                    e.dataTransfer.setData('text/plain', guest.id);
+                });
+
+                listEl.appendChild(item);
+            });
+        }
+
+        // 座位事件
+        function setupSeatEvents(seat, tableData, seatIndex) {
+            seat.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!seat.classList.contains('occupied')) seat.classList.add('drag-over');
+            });
+
+            seat.addEventListener('dragleave', () => seat.classList.remove('drag-over'));
+
+            seat.addEventListener('drop', (e) => {
+                e.preventDefault();
+                seat.classList.remove('drag-over');
+                if (seat.classList.contains('occupied')) return;
+
+                const guestId = e.dataTransfer.getData('text/plain');
+                const guestIndex = guests.findIndex(g => g.id === guestId);
+                
+                if (guestIndex !== -1) {
+                    const guestName = guests[guestIndex].name;
+                    tableData.seats[seatIndex] = guestName;
+                    seat.innerText = guestName;
+                    seat.title = guestName; 
+                    seat.classList.add('occupied');
+                    guests.splice(guestIndex, 1);
+                    renderGuests();
+                    saveToLocalStorage();
+                }
+            });
+
+            seat.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (seat.classList.contains('occupied')) {
+                    const retiredGuestName = tableData.seats[seatIndex];
+                    guests.push({ id: 'g_' + Date.now() + Math.random(), name: retiredGuestName });
+                    tableData.seats[seatIndex] = null;
+                    seat.innerText = '空';
+                    seat.removeAttribute('title');
+                    seat.classList.remove('occupied');
+                    renderGuests();
+                    saveToLocalStorage();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
