@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>12人座宴會排位系統 (支援 CSV 匯入)</title>
+    <title>12人座宴會排位系統 (支援 CSV 匯入與桌名修改)</title>
     <style>
         :root {
             --primary-color: #4a90e2;
@@ -69,7 +69,6 @@
         .btn-green { background-color: var(--success-color); position: relative; }
         .btn-green:hover { background-color: #24a195; }
 
-        /* 隱藏原生檔案選取器，用漂亮按鈕代替 */
         #csvFile {
             position: absolute;
             left: 0; top: 0; width: 100%; height: 100%;
@@ -108,7 +107,6 @@
             overflow: auto;
         }
 
-        /* 12人座需要稍大的容器空間 */
         .table-container {
             position: absolute;
             width: 340px;
@@ -135,7 +133,31 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             z-index: 2;
             background-color: var(--table-color);
-            pointer-events: none;
+        }
+
+        /* 可編輯的桌名樣式 */
+        .table-title {
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            max-width: 130px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: text; /* 提示使用者這裏可以打字 */
+            transition: background 0.2s;
+        }
+
+        .table-title:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .table-title:focus {
+            background: white;
+            color: #333;
+            outline: none;
+            cursor: text;
         }
 
         .delete-table-btn {
@@ -145,13 +167,12 @@
             color: white;
             padding: 3px 8px;
             border-radius: 4px;
-            margin-top: 6px;
+            margin-top: 8px;
             cursor: pointer;
-            pointer-events: auto;
         }
         .delete-table-btn:hover { background: #ff4d4d; }
 
-        /* 座位（12人座尺寸微調） */
+        /* 座位 */
         .seat {
             position: absolute;
             width: 52px;
@@ -209,10 +230,10 @@
     <div id="canvas"></div>
 
     <script>
-        // 1. 資料結構設定
-        let guests = []; // 由 CSV 匯入動態填入
+        // 1. 資料結構
+        let guests = []; 
         const tables = [
-            { id: "t_1", name: "第 1 桌", seatCount: 12, x: 60, y: 60 } // 預設給一桌
+            { id: "t_1", name: "第 1 桌", seatCount: 12, x: 60, y: 60 } 
         ];
         
         let draggedGuestId = null;
@@ -223,7 +244,7 @@
             renderTables();
         }
 
-        // 2. 處理 CSV 讀取演算法
+        // 2. CSV 讀取
         function handleCSV(input) {
             const file = input.files[0];
             if (!file) return;
@@ -231,11 +252,8 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 const text = e.target.result;
-                
-                // 拆分換行，並過濾掉空白行
                 const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
                 
-                // 清空舊名單，重新注入新資料
                 guests = lines.map((name, index) => ({
                     id: `g_${Date.now()}_${index}`,
                     name: name
@@ -243,10 +261,10 @@
 
                 renderGuests();
             };
-            reader.readAsText(file, 'UTF-8'); // 使用 UTF-8 編碼防止中文亂碼
+            reader.readAsText(file, 'UTF-8');
         }
 
-        // 3. 新增 12 人桌功能
+        // 3. 新增桌子
         function addTable() {
             tableCounter++;
             const id = 't_' + Date.now();
@@ -254,7 +272,7 @@
             tables.push({
                 id: id,
                 name: `第 ${tableCounter} 桌`,
-                seatCount: 12, // 強制固定 12 人
+                seatCount: 12, 
                 x: 80 + (tables.length * 25), 
                 y: 180
             });
@@ -269,7 +287,6 @@
                 const container = document.querySelector(`[data-id="${tableId}"]`);
                 const occupiedSeats = container.querySelectorAll('.seat.occupied');
                 
-                // 桌上如果有人，退回名單
                 occupiedSeats.forEach(seat => {
                     guests.push({ id: 'g_' + Date.now() + Math.random(), name: seat.innerText });
                 });
@@ -307,7 +324,7 @@
             });
         }
 
-        // 5. 渲染右側 12 人座桌椅 (精準調整 12 人幾何圓周)
+        // 5. 渲染右側 12 人圓桌
         function renderTables() {
             const canvas = document.getElementById('canvas');
             canvas.innerHTML = '';
@@ -323,10 +340,35 @@
                 const center = document.createElement('div');
                 center.className = 'table-center';
                 
+                // 【升級重點】建立可線上直接編輯的桌名標籤
                 const titleSpan = document.createElement('span');
+                titleSpan.className = 'table-title';
                 titleSpan.innerText = table.name;
+                titleSpan.contentEditable = true; // 開啟網頁直接編輯功能
+                titleSpan.spellcheck = false;
+
+                // 當使用者點擊文字準備打字時，停止拖拉事件，避免打字時桌子一直跟著滑鼠跑
+                titleSpan.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                });
+
+                // 當打完字、滑鼠點擊外面（失去焦點）時，把新桌名存回資料庫中
+                titleSpan.addEventListener('blur', () => {
+                    table.name = titleSpan.innerText.trim() || "未命名";
+                    titleSpan.innerText = table.name; // 確保沒有留空
+                });
+
+                // 阻擋 Enter 鍵換行，按 Enter 直接確認完成編輯
+                titleSpan.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        titleSpan.blur();
+                    }
+                });
+
                 center.appendChild(titleSpan);
 
+                // 刪除按鈕
                 const delBtn = document.createElement('button');
                 delBtn.className = 'delete-table-btn';
                 delBtn.innerText = '刪除桌子';
@@ -334,10 +376,14 @@
                     e.stopPropagation();
                     deleteTable(table.id);
                 };
+                
+                // 修正：點擊刪除按鈕不觸發拖拉
+                delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
                 center.appendChild(delBtn);
                 container.appendChild(center);
 
-                // 12人幾何計算：半徑拉大到 115px 避免大圈座位過於擁擠
+                // 12人幾何座位
                 const radius = 115; 
                 const totalSeats = 12;
 
@@ -346,11 +392,7 @@
                     seat.className = 'seat';
                     seat.innerText = '空';
                     
-                    // 12等分，每格 30 度 (2 * Math.PI / 12)
                     const angle = (i * 2 * Math.PI / totalSeats) - (Math.PI / 2);
-                    
-                    // 容器改為 340x340，因此中心點是 (170, 170)
-                    // 減去 26 是因為座位自身寬度 52px 的一半
                     const x = 170 + radius * Math.cos(angle) - 26;
                     const y = 170 + radius * Math.sin(angle) - 26;
 
@@ -366,13 +408,15 @@
             });
         }
 
-        // 6. 桌子自由拖拉物理邏輯
+        // 6. 桌子自由拖拉邏輯
         function makeTableDraggable(el, tableData) {
             let isDragging = false;
             let startX, startY;
 
             el.addEventListener('mousedown', (e) => {
-                if (e.target.classList.contains('seat') || e.target.classList.contains('delete-table-btn')) return;
+                // 如果點擊的是座位、桌名文字框、刪除按鈕，不發動桌子拖拉
+                if (e.target.classList.contains('seat') || e.target.classList.contains('table-title') || e.target.classList.contains('delete-table-btn')) return;
+                
                 isDragging = true;
                 startX = e.clientX - el.offsetLeft;
                 startY = e.clientY - el.offsetTop;
@@ -421,7 +465,7 @@
                 
                 if (guestIndex !== -1) {
                     seat.innerText = guests[guestIndex].name;
-                    seat.title = guests[guestIndex].name; // 滑鼠移上去顯示全名
+                    seat.title = guests[guestIndex].name; 
                     seat.classList.add('occupied');
                     guests.splice(guestIndex, 1);
                     renderGuests();
