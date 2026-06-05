@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>12人座宴會排位系統 (手機觸控+電腦完美版)</title>
+    <title>12人座宴會排位系統 (完美純白無痕列印版)</title>
     <style>
         :root {
             --primary-color: #4a90e2; --success-color: #2ec4b6; --export-color: #9b59b6;
@@ -14,7 +14,7 @@
         * { box-sizing: border-box; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; }
         body { margin: 0; display: flex; height: 100vh; background-color: var(--bg-color); overflow: hidden; -webkit-overflow-scrolling: touch; }
         
-        /* 左側控制面板 (手機上可滾動) */
+        /* 左側控制面板 */
         #sidebar { width: 320px; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; padding: 20px; z-index: 10; flex-shrink: 0; }
         .sidebar-scroll { flex: 1; overflow-y: auto; padding-right: 5px; display: flex; flex-direction: column; gap: 15px; }
         h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 6px; margin-bottom: 8px; font-size: 16px; }
@@ -40,11 +40,10 @@
         .guest-list { flex: 1; overflow-y: auto; border: 1px dashed #ccc; border-radius: 6px; padding: 10px; background: #fafafa; }
         .guest-item { background: #f0f4f8; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; cursor: grab; border-left: 5px solid var(--primary-color); font-size: 13px; user-select: none; touch-action: none; }
 
-        /* 右側畫布 */
+        /* 右側畫布 (螢幕看得到網格) */
         #canvas-container { flex: 1; overflow: auto; background-color: #e5e9f0; position: relative; -webkit-overflow-scrolling: touch; }
         #canvas { position: absolute; left: 0; top: 0; width: 1500px; height: 1000px; background-color: #e5e9f0; background-image: linear-gradient(#d8dee9 1px, transparent 1px), linear-gradient(90deg, #d8dee9 1px, transparent 1px); background-size: 20px 20px; }
         
-        /* 物件樣式 (加上 touch-action: none 防止觸控時網頁捲動) */
         .table-container { position: absolute; width: 340px; height: 340px; display: flex; justify-content: center; align-items: center; cursor: move; user-select: none; touch-action: none; }
         .table-center { width: 150px; height: 150px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 2; background-color: var(--default-table-color); position: relative; }
         .editable-title { padding: 2px 6px; border-radius: 4px; border: 1px solid transparent; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; cursor: text; text-align: center; max-width: 120px; }
@@ -70,11 +69,25 @@
         .alignment-guide { position: absolute; background: none; border: 0 dashed var(--guide-line-color); pointer-events: none; z-index: 9999; display: none; }
         .guide-v { border-left-width: 1px; width: 0; } .guide-h { border-top-width: 1px; height: 0; }
 
+        /* ==========================================================
+           🖨 完美除痕列印優化區
+           ========================================================== */
         @media print {
             #sidebar, .corner-del-btn, .resize-handle, .bottom-toolbar, .alignment-guide { display: none !important; }
             body { background-color: #ffffff !important; overflow: visible !important; }
             #canvas-container { overflow: visible !important; position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; }
-            #canvas { position: absolute !important; left: 0 !important; top: 0 !important; background-color: #ffffff !important; background-image: none !important; overflow: visible !important; max-width: 100% !important; transform-origin: left top !important; }
+            
+            /* 關鍵修正：強制將畫布背景設為純白，並徹底移除 background-image 的網格線 */
+            #canvas { 
+                position: absolute !important; 
+                left: 0 !important; 
+                top: 0 !important; 
+                background-color: #ffffff !important; 
+                background-image: none !important; /* ← 拔除網格，解決灰灰的問題 */
+                overflow: visible !important; 
+                max-width: 100% !important; 
+                transform-origin: left top !important; 
+            }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
@@ -145,13 +158,13 @@
         function triggerPerfectPrint() { autoResizeCanvasDimensions(); setTimeout(() => { window.print(); }, 100); }
 
         function saveToLocalStorage() {
-            localStorage.setItem('wedding_planner_mobile_ready', JSON.stringify({ guests, tables, customObjects, tableCounter }));
+            localStorage.setItem('wedding_planner_clean_print', JSON.stringify({ guests, tables, customObjects, tableCounter }));
             const now = new Date(); document.getElementById('saveTime').innerText = `自動存檔 (${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')})`;
             autoResizeCanvasDimensions();
         }
 
         function loadFromLocalStorage() {
-            const saved = localStorage.getItem('wedding_planner_mobile_ready');
+            const saved = localStorage.getItem('wedding_planner_clean_print');
             if (saved) { try { const p = JSON.parse(saved); guests = p.guests||[]; tables = p.tables||[]; customObjects = p.customObjects||[]; tableCounter = p.tableCounter||0; } catch(e) { initDefaultLayout(); } } 
             else { initDefaultLayout(); }
             renderGuests(); renderTables(); renderCustomObjects(); autoResizeCanvasDimensions();
@@ -233,40 +246,24 @@
             });
         }
 
-        // 📱 核心滑鼠與手機觸控智慧雙軌拖曳引擎
         function makeElementDraggable(el, dataBind) {
             let isDragging = false, startX, startY;
-
-            function startDrag(clientX, clientY) {
-                isDragging = true; startX = clientX - el.offsetLeft; startY = clientY - el.offsetTop; el.style.zIndex = 20;
-            }
+            function startDrag(clientX, clientY) { isDragging = true; startX = clientX - el.offsetLeft; startY = clientY - el.offsetTop; el.style.zIndex = 20; }
             function moveDrag(clientX, clientY, e) {
-                if (!isDragging) return;
-                if(e.cancelable) e.preventDefault(); // 阻斷手機網頁背景捲動
+                if (!isDragging) return; if(e.cancelable) e.preventDefault();
                 let newX = clientX - startX, newY = clientY - startY;
                 el.style.left = Math.max(0, newX) + 'px'; el.style.top = Math.max(0, newY) + 'px';
                 const finalPos = checkAlignment(el); dataBind.x = finalPos.x; dataBind.y = finalPos.y;
             }
             function stopDrag() { if(isDragging){ isDragging = false; el.style.zIndex = el.classList.contains('custom-object')?3:1; hideAllGuides(); saveToLocalStorage(); } }
 
-            // 電腦滑鼠事件
-            el.addEventListener('mousedown', (e) => {
-                if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return;
-                startDrag(e.clientX, e.clientY);
-            });
-            document.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY, e));
-            document.addEventListener('mouseup', stopDrag);
+            el.addEventListener('mousedown', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return; startDrag(e.clientX, e.clientY); });
+            document.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY, e)); document.addEventListener('mouseup', stopDrag);
 
-            // 手機觸控事件
-            el.addEventListener('touchstart', (e) => {
-                if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return;
-                const t = e.touches[0]; startDrag(t.clientX, t.clientY);
-            }, { passive: false });
-            el.addEventListener('touchmove', (e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY, e); }, { passive: false });
-            el.addEventListener('touchend', stopDrag);
+            el.addEventListener('touchstart', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return; const t = e.touches[0]; startDrag(t.clientX, t.clientY); }, { passive: false });
+            el.addEventListener('touchmove', (e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY, e); }, { passive: false }); el.addEventListener('touchend', stopDrag);
         }
 
-        // 📱 手機/電腦雙相容調整尺寸引擎
         function setupResizeEvents(handle, target, dataBind) {
             let isResizing = false, startW, startH, sX, sY;
             function startResize(clientX, clientY){ isResizing = true; startW = dataBind.width||target.offsetWidth; startH = dataBind.height||target.offsetHeight; sX = clientX; sY = clientY; }
@@ -300,15 +297,14 @@
                 else if (Math.abs(curCY - tCY) < snap) { snapY = tCY - curH/2; drawGuide('guide-hc', tCY, false); }
                 else if (Math.abs(curB - tB) < snap) { snapY = tB - curH; drawGuide('guide-hb', tB, false); }
             });
-            if (snapX !== null) draggingEl.style.left = snapX + 'px';
-            if (snapY !== null) draggingEl.style.top = snapY + 'px';
+            if (snapX !== null) draggingEl.style.left = snapX + 'px'; if (snapY !== null) draggingEl.style.top = snapY + 'px';
             return { x: snapX!==null?snapX:curL, y: snapY!==null?snapY:curT };
         }
 
         function drawGuide(id, val, isV) { const l = document.getElementById(id); if(!l)return; l.style.display='block'; if(isV){ l.style.left=val+'px'; l.style.top='0px'; l.style.height='100%'; }else{ l.style.top=val+'px'; l.style.left='0px'; l.style.width='100%'; } }
         function hideAllGuides() { document.querySelectorAll('.alignment-guide').forEach(el => el.style.display = 'none'); }
         function deleteTable(id) { const t = tables.find(x=>x.id===id); if(t){ t.seats.forEach(g => { if(g) guests.push({ id:'g_'+Date.now()+Math.random(), name:g }); }); tables=tables.filter(x=>x.id!==id); renderTables(); renderGuests(); saveToLocalStorage(); } }
-        function resetAllData() { if(confirm("確定重置？")){ localStorage.removeItem('wedding_planner_mobile_ready'); initDefaultLayout(); renderGuests(); renderTables(); renderCustomObjects(); autoResizeCanvasDimensions(); } }
+        function resetAllData() { if(confirm("確定重置？")){ localStorage.removeItem('wedding_planner_clean_print'); initDefaultLayout(); renderGuests(); renderTables(); renderCustomObjects(); autoResizeCanvasDimensions(); } }
         function exportData() { const blob = new Blob([JSON.stringify({ guests, tables, customObjects, tableCounter }, null, 2)], {type: "application/json"}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wedding_layout_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
         function importData(input) { const f = input.files[0]; if(!f)return; const r = new FileReader(); r.onload=(e)=>{ try{ const p=JSON.parse(e.target.result); if(p.guests&&p.tables){ guests=p.guests; tables=p.tables; customObjects=p.customObjects||[]; tableCounter=p.tableCounter||tables.length; renderGuests(); renderTables(); renderCustomObjects(); saveToLocalStorage(); alert("還原成功！"); } }catch(err){alert("失敗");} }; r.readAsText(f,'UTF-8'); input.value=''; }
         function handleCSV(input) { const f = input.files[0]; if(!f)return; const r = new FileReader(); r.onload=(e)=>{ e.target.result.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0).forEach((n,i)=>{ guests.push({ id:`g_csv_${Date.now()}_${i}`, name:n }); }); renderGuests(); saveToLocalStorage(); }; r.readAsText(f,'UTF-8'); input.value=''; }
@@ -320,15 +316,11 @@
             if(guests.length===0){ l.innerHTML = `<div style="color:#aaa;text-align:center;margin-top:20px;font-size:13px;">名單全數分配完畢</div>`; return; }
             guests.forEach(g => {
                 const item = document.createElement('div'); item.className = 'guest-item'; item.innerText = g.name;
-                // 手機端點擊名單直接快速排入空位
                 item.onclick = () => {
                     let assigned = false;
                     for(let t of tables) {
                         let idx = t.seats.findIndex(s => s === null);
-                        if(idx !== -1) {
-                            t.seats[idx] = g.name; guests = guests.filter(x => x.id !== g.id);
-                            renderGuests(); renderTables(); saveToLocalStorage(); assigned = true; break;
-                        }
+                        if(idx !== -1) { t.seats[idx] = g.name; guests = guests.filter(x => x.id !== g.id); renderGuests(); renderTables(); saveToLocalStorage(); assigned = true; break; }
                     }
                     if(!assigned) alert("目前所有圓桌都已經客滿囉！請建立新圓桌。");
                 };
@@ -336,13 +328,7 @@
             });
         }
         function setupSeatEvents(seat, table, idx) {
-            seat.onclick = (e) => {
-                e.stopPropagation();
-                if (seat.classList.contains('occupied')) {
-                    const name = table.seats[idx]; guests.push({ id:'g_'+Date.now()+Math.random(), name: name });
-                    table.seats[idx] = null; renderGuests(); renderTables(); saveToLocalStorage();
-                }
-            };
+            seat.onclick = (e) => { e.stopPropagation(); if (seat.classList.contains('occupied')) { const name = table.seats[idx]; guests.push({ id:'g_'+Date.now()+Math.random(), name: name }); table.seats[idx] = null; renderGuests(); renderTables(); saveToLocalStorage(); } };
         }
     </script>
 </body>
