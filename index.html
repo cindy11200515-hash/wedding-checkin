@@ -152,7 +152,27 @@ async function searchGuest() {
     confirmSection.style.display = "none";
 
     try {
-        // 抓總名單
+        // 1. 先檢查這個人是不是「已經報到過」了
+        let recRes = await fetch(`${API_URL}?action=getRecords`);
+        let records = await recRes.json();
+        const checkedInRecord = records.find(r => r.name === inputName);
+
+        // 如果已經報到過，直接秀出結果與座位圖，擋住加減人數的畫面
+        if (checkedInRecord) {
+            resultSection.innerHTML = `
+                <h3 style="color: #1c7ed6; margin-top:0;">您先前已完成報到囉！</h3>
+                <p><strong>${checkedInRecord.name}</strong> 的座位在：</p>
+                <div class="table-number">${checkedInRecord.table}</div>
+                <p>已登記到場人數：<strong>${checkedInRecord.actualCount} 人</strong></p>
+                <p style="font-weight:bold; margin-top:15px; color:#333;">📍 宴席座位指引圖：</p>
+                <img class="map-img" src="請替換成你的座位圖圖片網址.jpg" alt="座位位置圖">
+                <p style="font-size:13px; color:#888; margin-top:10px;">歡迎直接入座，祝您用餐愉快！</p>
+            `;
+            resultSection.style.display = "block";
+            return; // 直接結束，不往下跑名單查詢
+        }
+
+        // 2. 如果還沒報到，才去撈總名單看他是哪一桌
         let response = await fetch(`${API_URL}?action=getGuests`);
         let guestDatabase = await response.json();
         const guest = guestDatabase.find(g => g.name === inputName);
@@ -161,12 +181,9 @@ async function searchGuest() {
             currentGuest = guest;
             currentActualCount = guest.count; // 預設帶入預估人數
             
-            // 抓已到場紀錄，計算該桌已經來了多少人
-            let recRes = await fetch(`${API_URL}?action=getRecords`);
-            let records = await recRes.json();
-            
+            // 計算該桌現場「其他已經報到的人」總數
             currentTableTotalActual = records
-                .filter(r => r.table === guest.table && r.name !== guest.name) // 排除自己先前的可能紀錄
+                .filter(r => r.table === guest.table)
                 .reduce((sum, r) => sum + (parseInt(r.actualCount) || 0), 0);
 
             document.getElementById("welcome-title").innerText = `${guest.name} 您好！`;
@@ -190,6 +207,7 @@ async function searchGuest() {
         loadingMsg.style.display = "none";
     }
 }
+
 
 function changeCount(delta) {
     let targetCount = currentActualCount + delta;
