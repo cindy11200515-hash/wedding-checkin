@@ -54,10 +54,6 @@
             cursor: pointer;
             margin-top: 10px;
         }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
         .counter-section {
             margin: 20px 0;
             padding: 15px;
@@ -98,7 +94,7 @@
         .table-number { font-size: 32px; font-weight: bold; color: var(--primary-color); margin: 10px 0; }
         .map-img { width: 100%; max-width: 350px; margin-top: 15px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .loading { display: none; color: #666; margin-top: 15px; font-weight: bold; }
-        .init-loading { color: #d63447; font-size: 14px; margin-bottom: 15px; font-weight: bold; }
+        .init-status { color: #666; font-size: 12px; margin-top: 10px; font-style: italic; display: block; }
     </style>
 </head>
 <body>
@@ -106,15 +102,14 @@
 <div class="container">
     <h2>歡迎光臨我們的婚宴</h2>
     <div class="subtitle">請輸入您的姓名以確認桌位並完成報到</div>
-    
-    <div id="init-msg" class="init-loading">正在連線雲端資料庫，請稍候...</div>
 
     <div id="search-section">
         <div class="form-group">
             <label for="guest-name">賓客姓名</label>
-            <input type="text" id="guest-name" placeholder="請輸入您的姓名" autocomplete="off" disabled>
+            <input type="text" id="guest-name" placeholder="請輸入您的姓名" autocomplete="off">
         </div>
-        <button id="search-btn" onclick="searchGuest()" disabled>請稍候...</button>
+        <button id="search-btn" onclick="searchGuest()">查詢資料</button>
+        <span id="init-msg" class="init-status">正在安全連線雲端資料庫...</span>
     </div>
 
     <div id="confirm-section" style="display: none; text-align: left;">
@@ -144,15 +139,16 @@ const API_URL = "https://script.google.com/macros/s/AKfycbzcNdYRPaYInARPzy-lCOil
 // 本地記憶體暫存變數
 let globalGuestDatabase = [];
 let globalRecords = [];
+let isDataLoaded = false; // 標記雲端資料是否下載完畢
+let isSearchingWhenLoading = false; // 標記賓客是不是在載入期間就提早按了查詢
 
 let currentGuest = null;
 let currentActualCount = 1;
-let currentTableTotalActual = 0; // 該桌目前已報到的總人數
+let currentTableTotalActual = 0; 
 
-// 🚀 核心優化：網頁一打開，立刻在背景偷偷下載所有名單與紀錄
+// 🚀 背景秘密預載入
 async function initSystem() {
     try {
-        // 同步並行抓取兩個資料庫，節省時間
         const [resGuests, resRecords] = await Promise.all([
             fetch(`${API_URL}?action=getGuests`),
             fetch(`${API_URL}?action=getRecords`)
@@ -161,19 +157,34 @@ async function initSystem() {
         globalGuestDatabase = await resGuests.json();
         globalRecords = await resRecords.json();
         
-        // 下載完成，解鎖輸入框與按鈕
+        isDataLoaded = true; // 載入完成！
         document.getElementById("init-msg").style.display = "none";
-        document.getElementById("guest-name").disabled = false;
-        document.getElementById("search-btn").disabled = false;
-        document.getElementById("search-btn").innerText = "查詢資料";
+        
+        // 💡 如果賓客在載入完成前就提前按了查詢，這時候自動幫他觸發秒查
+        if (isSearchingWhenLoading) {
+            isSearchingWhenLoading = false;
+            document.getElementById("search-btn").innerText = "查詢資料";
+            executeSearch(); 
+        }
     } catch (err) {
-        document.getElementById("init-msg").innerText = "⚠️ 網路連線失敗，請重新整理網頁！";
+        document.getElementById("init-msg").innerText = "⚠️ 網路連線緩慢，請保持網頁開啟。";
         console.error(err);
     }
 }
 
-// ⚡ 零延遲秒查功能
+// 查詢按鈕觸發事件
 function searchGuest() {
+    // 如果資料還沒載入完，賓客就按了查詢
+    if (!isDataLoaded) {
+        isSearchingWhenLoading = true;
+        document.getElementById("search-btn").innerText = "雲端同步中，請稍候...";
+        return;
+    }
+    executeSearch();
+}
+
+// ⚡ 真正的零延遲秒查核心
+function executeSearch() {
     const inputName = document.getElementById("guest-name").value.trim();
     const resultSection = document.getElementById("result-section");
     const confirmSection = document.getElementById("confirm-section");
@@ -184,11 +195,10 @@ function searchGuest() {
     resultSection.style.display = "none";
     confirmSection.style.display = "none";
 
-    // 1. 於記憶體中秒查：這個人是不是「已經報到過」了
+    // 1. 記憶體秒查：是否重複報到
     const checkedInRecord = globalRecords.find(r => r.name === inputName);
 
     if (checkedInRecord) {
-        // 如果已經報到過，直接秒秀座位圖
         let mapImageName = `${checkedInRecord.table}.jpg`;
         resultSection.innerHTML = `
             <h3 style="color: #1c7ed6; margin-top:0;">您先前已完成報到囉！</h3>
@@ -203,14 +213,13 @@ function searchGuest() {
         return; 
     }
 
-    // 2. 如果還沒報到，於記憶體中秒查總名單
+    // 2. 記憶體秒查：撈桌位
     const guest = globalGuestDatabase.find(g => g.name === inputName);
 
     if (guest) {
         currentGuest = guest;
-        currentActualCount = guest.count; // 預設帶入預估人數
+        currentActualCount = guest.count; 
         
-        // 秒算該桌現場「其他已經報到的人」總數
         currentTableTotalActual = globalRecords
             .filter(r => r.table === guest.table)
             .reduce((sum, r) => sum + (parseInt(r.actualCount) || 0), 0);
@@ -254,7 +263,6 @@ function checkTableLimit() {
     }
 }
 
-// 寫入報到資料（只有這裡會耗費連線時間）
 async function finalCheckIn() {
     const confirmSection = document.getElementById("confirm-section");
     const resultSection = document.getElementById("result-section");
@@ -264,11 +272,9 @@ async function finalCheckIn() {
     loadingMsg.style.display = "block";
 
     try {
-        // 乾淨的 24 小時制時間產生 (時:分:秒)
         let now = new Date();
         let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 10 ? '0' + v : v).join(':');
 
-        // 送出 POST 請求寫入 Google 試算表
         await fetch(API_URL, {
             method: "POST",
             body: JSON.stringify({
@@ -281,7 +287,6 @@ async function finalCheckIn() {
             })
         });
 
-        // 顯示專屬座位指引圖檔名
         let mapImageName = `${currentGuest.table}.jpg`;
 
         resultSection.innerHTML = `
@@ -302,7 +307,6 @@ async function finalCheckIn() {
     }
 }
 
-// 網頁一打開，立刻發動「背景秘密預載入」
 window.onload = initSystem;
 </script>
 
