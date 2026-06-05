@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>12人座宴會排位系統 (支援 CSV 匯入與桌名修改)</title>
+    <title>12人座宴會排位系統 (支援 CSV 與手動新增)</title>
     <style>
         :root {
             --primary-color: #4a90e2;
@@ -61,6 +61,7 @@
             font-size: 14px;
             transition: background 0.2s;
             text-align: center;
+            width: 100%;
         }
 
         .btn-blue { background-color: var(--primary-color); }
@@ -68,6 +69,34 @@
         
         .btn-green { background-color: var(--success-color); position: relative; }
         .btn-green:hover { background-color: #24a195; }
+
+        /* 手動輸入群組 */
+        .input-group {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 5px;
+        }
+
+        .input-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+        .input-input:focus {
+            border-color: var(--primary-color);
+        }
+
+        .btn-add-guest {
+            background-color: #6c757d;
+            width: auto;
+            padding: 8px 15px;
+        }
+        .btn-add-guest:hover {
+            background-color: #5a6268;
+        }
 
         #csvFile {
             position: absolute;
@@ -135,7 +164,6 @@
             background-color: var(--table-color);
         }
 
-        /* 可編輯的桌名樣式 */
         .table-title {
             padding: 4px 8px;
             border-radius: 4px;
@@ -144,7 +172,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            cursor: text; /* 提示使用者這裏可以打字 */
+            cursor: text;
             transition: background 0.2s;
         }
 
@@ -157,7 +185,6 @@
             background: white;
             color: #333;
             outline: none;
-            cursor: text;
         }
 
         .delete-table-btn {
@@ -220,10 +247,16 @@
             </div>
             <button class="btn btn-blue" onclick="addTable()">+ 新增 12人圓桌</button>
         </div>
+
+        <h3>手動新增賓客</h3>
+        <div class="input-group">
+            <input type="text" id="newGuestName" class="input-input" placeholder="輸入賓客姓名..." onkeydown="handleGuestInputKey(event)">
+            <button class="btn btn-add-guest" onclick="addSingleGuest()">新增</button>
+        </div>
         
-        <h3>未分配賓客 (<span id="guestCount">0</span>)</h3>
+        <h3 style="margin-top: 15px;">未分配賓客 (<span id="guestCount">0</span>)</h3>
         <div class="guest-list" id="guestList">
-            <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">請先匯入 CSV 名單</div>
+            <div style="color: #aaa; text-align: center; margin-top: 20px; font-size: 14px;">請匯入 CSV 或手動新增名單</div>
         </div>
     </div>
 
@@ -254,17 +287,51 @@
                 const text = e.target.result;
                 const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
                 
-                guests = lines.map((name, index) => ({
-                    id: `g_${Date.now()}_${index}`,
-                    name: name
-                }));
+                // 批量追加名單（不覆蓋原本手動新增的人）
+                lines.forEach((name, index) => {
+                    guests.push({
+                        id: `g_csv_${Date.now()}_${index}_${Math.random()}`,
+                        name: name
+                    });
+                });
 
                 renderGuests();
             };
             reader.readAsText(file, 'UTF-8');
+            input.value = ''; // 清空 file input 讓同檔案可重複匯入
         }
 
-        // 3. 新增桌子
+        // 【新功能】3. 手動新增單一賓客邏輯
+        function addSingleGuest() {
+            const inputEl = document.getElementById('newGuestName');
+            const name = inputEl.value.trim();
+            
+            if (!name) {
+                alert("請先輸入賓客姓名！");
+                return;
+            }
+
+            // 將新姓名塞入賓客陣列
+            guests.push({
+                id: `g_manual_${Date.now()}_${Math.random()}`,
+                name: name
+            });
+
+            // 重新渲染左側清單並清空輸入框
+            renderGuests();
+            inputEl.value = '';
+            inputEl.focus(); // 讓游標維持在輸入框內，方便連續打字
+        }
+
+        // 支援手動輸入框按下 Enter 鍵直接新增
+        function handleGuestInputKey(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addSingleGuest();
+            }
+        }
+
+        // 4. 新增桌子
         function addTable() {
             tableCounter++;
             const id = 't_' + Date.now();
@@ -297,7 +364,7 @@
             }
         }
 
-        // 4. 渲染左側名單
+        // 5. 渲染左側名單
         function renderGuests() {
             const listEl = document.getElementById('guestList');
             const countEl = document.getElementById('guestCount');
@@ -324,7 +391,7 @@
             });
         }
 
-        // 5. 渲染右側 12 人圓桌
+        // 6. 渲染右側 12 人圓桌
         function renderTables() {
             const canvas = document.getElementById('canvas');
             canvas.innerHTML = '';
@@ -340,25 +407,18 @@
                 const center = document.createElement('div');
                 center.className = 'table-center';
                 
-                // 【升級重點】建立可線上直接編輯的桌名標籤
+                // 桌名標籤
                 const titleSpan = document.createElement('span');
                 titleSpan.className = 'table-title';
                 titleSpan.innerText = table.name;
-                titleSpan.contentEditable = true; // 開啟網頁直接編輯功能
+                titleSpan.contentEditable = true; 
                 titleSpan.spellcheck = false;
 
-                // 當使用者點擊文字準備打字時，停止拖拉事件，避免打字時桌子一直跟著滑鼠跑
-                titleSpan.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                });
-
-                // 當打完字、滑鼠點擊外面（失去焦點）時，把新桌名存回資料庫中
+                titleSpan.addEventListener('mousedown', (e) => { e.stopPropagation(); });
                 titleSpan.addEventListener('blur', () => {
                     table.name = titleSpan.innerText.trim() || "未命名";
-                    titleSpan.innerText = table.name; // 確保沒有留空
+                    titleSpan.innerText = table.name;
                 });
-
-                // 阻擋 Enter 鍵換行，按 Enter 直接確認完成編輯
                 titleSpan.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -376,8 +436,6 @@
                     e.stopPropagation();
                     deleteTable(table.id);
                 };
-                
-                // 修正：點擊刪除按鈕不觸發拖拉
                 delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
                 center.appendChild(delBtn);
@@ -408,13 +466,12 @@
             });
         }
 
-        // 6. 桌子自由拖拉邏輯
+        // 7. 桌子自由拖拉邏輯
         function makeTableDraggable(el, tableData) {
             let isDragging = false;
             let startX, startY;
 
             el.addEventListener('mousedown', (e) => {
-                // 如果點擊的是座位、桌名文字框、刪除按鈕，不發動桌子拖拉
                 if (e.target.classList.contains('seat') || e.target.classList.contains('table-title') || e.target.classList.contains('delete-table-btn')) return;
                 
                 isDragging = true;
@@ -446,7 +503,7 @@
             });
         }
 
-        // 7. 座位事件
+        // 8. 座位事件
         function setupSeatEvents(seat) {
             seat.addEventListener('dragover', (e) => {
                 e.preventDefault();
