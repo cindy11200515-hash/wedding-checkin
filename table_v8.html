@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>12人座宴會排位系統 (標準滑鼠拖曳+純白列印版)</title>
+    <title>12人座宴會排位系統 (賓客可刪除+純白列印版)</title>
     <style>
         :root {
             --primary-color: #4a90e2; --success-color: #2ec4b6; --export-color: #9b59b6;
@@ -39,9 +39,14 @@
         .guest-list-container { flex: 1; min-height: 120px; display: flex; flex-direction: column; }
         .guest-list { flex: 1; overflow-y: auto; border: 1px dashed #ccc; border-radius: 6px; padding: 10px; background: #fafafa; }
         
-        /* 賓客名單項目：恢復電腦專用抓取樣式 */
-        .guest-item { background: #f0f4f8; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; cursor: grab; border-left: 5px solid var(--primary-color); font-size: 13px; user-select: none; }
+        /* 賓客項目改為彈性盒模型，以便容納右側的刪除按鈕 */
+        .guest-item { display: flex; justify-content: space-between; align-items: center; background: #f0f4f8; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; cursor: grab; border-left: 5px solid var(--primary-color); font-size: 13px; user-select: none; }
         .guest-item:active { cursor: grabbing; }
+        .guest-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 5px; }
+        
+        /* 賓客名單專用小刪除鈕 */
+        .guest-del-btn { background: transparent; color: #aaa; border: none; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.2s; font-weight: bold; }
+        .guest-del-btn:hover { color: var(--danger-color); background: rgba(231, 76, 60, 0.1); }
 
         /* 右側畫布 */
         #canvas-container { flex: 1; overflow: auto; background-color: #e5e9f0; position: relative; -webkit-overflow-scrolling: touch; }
@@ -246,10 +251,10 @@
             }
             function stopDrag() { if(isDragging){ isDragging = false; el.style.zIndex = el.classList.contains('custom-object')?3:1; hideAllGuides(); saveToLocalStorage(); } }
 
-            el.addEventListener('mousedown', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return; startDrag(e.clientX, e.clientY); });
+            el.addEventListener('mousedown', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle, .guest-del-btn')) return; startDrag(e.clientX, e.clientY); });
             document.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY, e)); document.addEventListener('mouseup', stopDrag);
 
-            el.addEventListener('touchstart', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle')) return; const t = e.touches[0]; startDrag(t.clientX, t.clientY); }, { passive: false });
+            el.addEventListener('touchstart', (e) => { if (e.target.closest('.seat, .editable-title, .corner-del-btn, .font-btn, .custom-color-input, .resize-handle, .guest-del-btn')) return; const t = e.touches[0]; startDrag(t.clientX, t.clientY); }, { passive: false });
             el.addEventListener('touchmove', (e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY, e); }, { passive: false }); el.addEventListener('touchend', stopDrag);
         }
 
@@ -301,22 +306,33 @@
         function handleGuestInputKey(e) { if(e.key==='Enter'){ e.preventDefault(); addSingleGuest(); } }
         function addTable() { tableCounter++; tables.push({ id:'t_'+Date.now(), name:`第 ${tableCounter} 桌`, seatCount:12, x:200+(tables.length*20), y:250, fontSize:16, color:"#b81d24", seats:Array(12).fill(null) }); renderTables(); saveToLocalStorage(); }
         
-        /* 恢復標準滑鼠 HTML5 Drag and Drop 渲染機制 */
+        /* 支援刪除名單功能與 Drag & Drop */
         function renderGuests() {
             const l = document.getElementById('guestList'); document.getElementById('guestCount').innerText = guests.length; l.innerHTML = '';
             if(guests.length===0){ l.innerHTML = `<div style="color:#aaa;text-align:center;margin-top:20px;font-size:13px;">名單全數分配完畢</div>`; return; }
             guests.forEach(g => {
-                const item = document.createElement('div'); item.className = 'guest-item'; item.innerText = g.name;
-                item.draggable = true; // 啟用電腦原生抓取
+                const item = document.createElement('div'); item.className = 'guest-item';
+                item.draggable = true;
                 item.addEventListener('dragstart', (e) => {
                     e.dataTransfer.setData('text/plain', JSON.stringify(g));
                 });
-                l.appendChild(item);
+
+                // 姓名區塊
+                const nameSpan = document.createElement('span'); nameSpan.className = 'guest-name'; nameSpan.innerText = g.name;
+                
+                // 獨立刪除按鈕
+                const delBtn = document.createElement('button'); delBtn.className = 'guest-del-btn'; delBtn.innerText = '✕'; delBtn.title = '刪除此賓客';
+                delBtn.onclick = (e) => {
+                    e.stopPropagation(); // 防止觸發其他可能事件
+                    guests = guests.filter(x => x.id !== g.id); // 移除此人
+                    renderGuests(); saveToLocalStorage(); // 重新渲染並存檔
+                };
+
+                item.appendChild(nameSpan); item.appendChild(delBtn); l.appendChild(item);
             });
         }
 
         function setupSeatEvents(seat, table, idx) {
-            // 允許將賓客拖曳到這個椅子上
             seat.addEventListener('dragover', (e) => { e.preventDefault(); seat.classList.add('drag-over'); });
             seat.addEventListener('dragleave', () => { seat.classList.remove('drag-over'); });
             
@@ -324,7 +340,6 @@
                 e.preventDefault(); seat.classList.remove('drag-over');
                 try {
                     const guestData = JSON.parse(e.dataTransfer.getData('text/plain'));
-                    // 如果原本位置有人，先踢回名單
                     if (table.seats[idx]) {
                         guests.push({ id: 'g_'+Date.now()+Math.random(), name: table.seats[idx] });
                     }
@@ -334,7 +349,6 @@
                 } catch(err) { console.error("拖放解析失敗", err); }
             });
 
-            // 點擊椅子即可退位 (手機、電腦皆通用)
             seat.onclick = (e) => {
                 e.stopPropagation();
                 if (seat.classList.contains('occupied')) {
