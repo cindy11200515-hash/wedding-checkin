@@ -54,6 +54,10 @@
             cursor: pointer;
             margin-top: 10px;
         }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
         .counter-section {
             margin: 20px 0;
             padding: 15px;
@@ -94,6 +98,7 @@
         .table-number { font-size: 32px; font-weight: bold; color: var(--primary-color); margin: 10px 0; }
         .map-img { width: 100%; max-width: 350px; margin-top: 15px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .loading { display: none; color: #666; margin-top: 15px; font-weight: bold; }
+        .init-loading { color: #d63447; font-size: 14px; margin-bottom: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -102,12 +107,14 @@
     <h2>歡迎光臨我們的婚宴</h2>
     <div class="subtitle">請輸入您的姓名以確認桌位並完成報到</div>
     
+    <div id="init-msg" class="init-loading">正在連線雲端資料庫，請稍候...</div>
+
     <div id="search-section">
         <div class="form-group">
             <label for="guest-name">賓客姓名</label>
-            <input type="text" id="guest-name" placeholder="請輸入您的姓名" autocomplete="off">
+            <input type="text" id="guest-name" placeholder="請輸入您的姓名" autocomplete="off" disabled>
         </div>
-        <button onclick="searchGuest()">查詢資料</button>
+        <button id="search-btn" onclick="searchGuest()" disabled>請稍候...</button>
     </div>
 
     <div id="confirm-section" style="display: none; text-align: left;">
@@ -126,7 +133,7 @@
         <button onclick="finalCheckIn()" style="background-color: #2b8a3e;">確認報到入座</button>
     </div>
     
-    <div id="loading-msg" class="loading">正在連線雲端資料庫，請稍候...</div>
+    <div id="loading-msg" class="loading">正在傳送報到資料，請稍候...</div>
     <div id="result-section" class="result-box"></div>
 </div>
 
@@ -134,86 +141,101 @@
 // ⚠️ 請在下方雙引號內，貼上你在 Google Apps Script 取得的最新部署網址
 const API_URL = "https://script.google.com/macros/s/AKfycbzcNdYRPaYInARPzy-lCOilwcFD_HWhuU8Ir16-1rIZxCLD5fMwSDFae_XDLv3HhOfK/exec";
 
+// 本地記憶體暫存變數
+let globalGuestDatabase = [];
+let globalRecords = [];
+
 let currentGuest = null;
 let currentActualCount = 1;
 let currentTableTotalActual = 0; // 該桌目前已報到的總人數
 
-async function searchGuest() {
+// 🚀 核心優化：網頁一打開，立刻在背景偷偷下載所有名單與紀錄
+async function initSystem() {
+    try {
+        // 同步並行抓取兩個資料庫，節省時間
+        const [resGuests, resRecords] = await Promise.all([
+            fetch(`${API_URL}?action=getGuests`),
+            fetch(`${API_URL}?action=getRecords`)
+        ]);
+        
+        globalGuestDatabase = await resGuests.json();
+        globalRecords = await resRecords.json();
+        
+        // 下載完成，解鎖輸入框與按鈕
+        document.getElementById("init-msg").style.display = "none";
+        document.getElementById("guest-name").disabled = false;
+        document.getElementById("search-btn").disabled = false;
+        document.getElementById("search-btn").innerText = "查詢資料";
+    } catch (err) {
+        document.getElementById("init-msg").innerText = "⚠️ 網路連線失敗，請重新整理網頁！";
+        console.error(err);
+    }
+}
+
+// ⚡ 零延遲秒查功能
+function searchGuest() {
     const inputName = document.getElementById("guest-name").value.trim();
     const resultSection = document.getElementById("result-section");
-    const loadingMsg = document.getElementById("loading-msg");
     const confirmSection = document.getElementById("confirm-section");
     const searchSection = document.getElementById("search-section");
     
     if (!inputName) { alert("請輸入姓名！"); return; }
     
-    loadingMsg.style.display = "block";
     resultSection.style.display = "none";
     confirmSection.style.display = "none";
 
-    try {
-        // 1. 先檢查這個人是不是「已經報到過」了
-        let recRes = await fetch(`${API_URL}?action=getRecords`);
-        let records = await recRes.json();
-        const checkedInRecord = records.find(r => r.name === inputName);
+    // 1. 於記憶體中秒查：這個人是不是「已經報到過」了
+    const checkedInRecord = globalRecords.find(r => r.name === inputName);
 
-        // 如果已經報到過，直接秀出結果與座位圖，擋住加減人數的畫面
-        if (checkedInRecord) {
-            resultSection.innerHTML = `
-                <h3 style="color: #1c7ed6; margin-top:0;">您先前已完成報到囉！</h3>
-                <p><strong>${checkedInRecord.name}</strong> 的座位在：</p>
-                <div class="table-number">${checkedInRecord.table}</div>
-                <p>已登記到場人數：<strong>${checkedInRecord.actualCount} 人</strong></p>
-                <p style="font-weight:bold; margin-top:15px; color:#333;">📍 宴席座位指引圖：</p>
-                <img class="map-img" src="請替換成你的座位圖圖片網址.jpg" alt="座位位置圖">
-                <p style="font-size:13px; color:#888; margin-top:10px;">歡迎直接入座，祝您用餐愉快！</p>
-            `;
-            resultSection.style.display = "block";
-            return; // 直接結束，不往下跑名單查詢
-        }
+    if (checkedInRecord) {
+        // 如果已經報到過，直接秒秀座位圖
+        let mapImageName = `${checkedInRecord.table}.jpg`;
+        resultSection.innerHTML = `
+            <h3 style="color: #1c7ed6; margin-top:0;">您先前已完成報到囉！</h3>
+            <p><strong>${checkedInRecord.name}</strong> 的座位在：</p>
+            <div class="table-number">${checkedInRecord.table}</div>
+            <p>已登記到場人數：<strong>${checkedInRecord.actualCount} 人</strong></p>
+            <p style="font-weight:bold; margin-top:15px; color:#333;">📍 宴席座位指引圖：</p>
+            <img class="map-img" src="${mapImageName}" onerror="this.src='default.jpg'; this.onerror=null;" alt="座位位置圖">
+            <p style="font-size:13px; color:#888; margin-top:10px;">歡迎直接入座，祝您用餐愉快！</p>
+        `;
+        resultSection.style.display = "block";
+        return; 
+    }
 
-        // 2. 如果還沒報到，才去撈總名單看他是哪一桌
-        let response = await fetch(`${API_URL}?action=getGuests`);
-        let guestDatabase = await response.json();
-        const guest = guestDatabase.find(g => g.name === inputName);
+    // 2. 如果還沒報到，於記憶體中秒查總名單
+    const guest = globalGuestDatabase.find(g => g.name === inputName);
 
-        if (guest) {
-            currentGuest = guest;
-            currentActualCount = guest.count; // 預設帶入預估人數
-            
-            // 計算該桌現場「其他已經報到的人」總數
-            currentTableTotalActual = records
-                .filter(r => r.table === guest.table)
-                .reduce((sum, r) => sum + (parseInt(r.actualCount) || 0), 0);
+    if (guest) {
+        currentGuest = guest;
+        currentActualCount = guest.count; // 預設帶入預估人數
+        
+        // 秒算該桌現場「其他已經報到的人」總數
+        currentTableTotalActual = globalRecords
+            .filter(r => r.table === guest.table)
+            .reduce((sum, r) => sum + (parseInt(r.actualCount) || 0), 0);
 
-            document.getElementById("welcome-title").innerText = `${guest.name} 您好！`;
-            document.getElementById("welcome-table").innerText = guest.table;
-            document.getElementById("actual-count-val").innerText = currentActualCount;
-            
-            checkTableLimit();
+        document.getElementById("welcome-title").innerText = `${guest.name} 您好！`;
+        document.getElementById("welcome-table").innerText = guest.table;
+        document.getElementById("actual-count-val").innerText = currentActualCount;
+        
+        checkTableLimit();
 
-            searchSection.style.display = "none";
-            confirmSection.style.display = "block";
-        } else {
-            resultSection.innerHTML = `
-                <p style="color:#b32121; font-weight:bold;">找不到您的名單資料</p>
-                <p style="font-size: 14px; color:#555;">請確認姓名是否正確，或洽詢現場招待人員協助。</p>
-            `;
-            resultSection.style.display = "block";
-        }
-    } catch (err) {
-        alert("網路連線失敗，請稍後再試！");
-    } finally {
-        loadingMsg.style.display = "none";
+        searchSection.style.display = "none";
+        confirmSection.style.display = "block";
+    } else {
+        resultSection.innerHTML = `
+            <p style="color:#b32121; font-weight:bold;">找不到您的名單資料</p>
+            <p style="font-size: 14px; color:#555;">請確認姓名是否正確，或洽詢現場招待人員協助。</p>
+        `;
+        resultSection.style.display = "block";
     }
 }
-
 
 function changeCount(delta) {
     let targetCount = currentActualCount + delta;
     if (targetCount < 1) targetCount = 1; 
     
-    // 檢查加上去之後是否會超過該桌 12 人限制
     if (currentTableTotalActual + targetCount > 12 && delta > 0) {
         alert(`提醒：加上這人數後，【${currentGuest.table}】總人數將達到 ${currentTableTotalActual + targetCount} 人，已超過每桌 12 人上限，請向招待人員確認是否有調桌需求！`);
     }
@@ -232,6 +254,7 @@ function checkTableLimit() {
     }
 }
 
+// 寫入報到資料（只有這裡會耗費連線時間）
 async function finalCheckIn() {
     const confirmSection = document.getElementById("confirm-section");
     const resultSection = document.getElementById("result-section");
@@ -241,26 +264,25 @@ async function finalCheckIn() {
     loadingMsg.style.display = "block";
 
     try {
-        let recRes = await fetch(`${API_URL}?action=getRecords`);
-        let records = await recRes.json();
-        const isAlreadyCheckedIn = records.some(r => r.name === currentGuest.name);
+        // 乾淨的 24 小時制時間產生 (時:分:秒)
+        let now = new Date();
+        let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 10 ? '0' + v : v).join(':');
 
-        if (!isAlreadyCheckedIn) {
-            let now = new Date();
-let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 10 ? '0' + v : v).join(':');
+        // 送出 POST 請求寫入 Google 試算表
+        await fetch(API_URL, {
+            method: "POST",
+            body: JSON.stringify({
+                action: "checkIn",
+                time: timeStr,
+                name: currentGuest.name,
+                table: currentGuest.table,
+                expectedCount: currentGuest.count,
+                actualCount: currentActualCount
+            })
+        });
 
-            await fetch(API_URL, {
-                method: "POST",
-                body: JSON.stringify({
-                    action: "checkIn",
-                    time: timeStr,
-                    name: currentGuest.name,
-                    table: currentGuest.table,
-                    expectedCount: currentGuest.count,
-                    actualCount: currentActualCount
-                })
-            });
-        }
+        // 顯示專屬座位指引圖檔名
+        let mapImageName = `${currentGuest.table}.jpg`;
 
         resultSection.innerHTML = `
             <h3 style="color: #2e7d32; margin-top:0;">恭喜！報到成功</h3>
@@ -268,7 +290,7 @@ let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 
             <div class="table-number">${currentGuest.table}</div>
             <p>今日到場人數：<strong>${currentActualCount} 人</strong></p>
             <p style="font-weight:bold; margin-top:15px; color:#333;">📍 宴席座位指引圖：</p>
-            <img class="map-img" src="請替換成你的座位圖圖片網址.jpg" alt="座位位置圖">
+            <img class="map-img" src="${mapImageName}" onerror="this.src='default.jpg'; this.onerror=null;" alt="座位位置圖">
             <p style="font-size:13px; color:#888; margin-top:10px;">歡迎入座，祝您用餐愉快！</p>
         `;
         resultSection.style.display = "block";
@@ -279,6 +301,9 @@ let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 
         loadingMsg.style.display = "none";
     }
 }
+
+// 網頁一打開，立刻發動「背景秘密預載入」
+window.onload = initSystem;
 </script>
 
 </body>
