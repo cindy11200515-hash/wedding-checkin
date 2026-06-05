@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>12人座宴會排位系統 (全功能 + 智慧動態對齊虛線版)</title>
+    <title>12人座宴會排位系統 (含一鍵完美列印版)</title>
     <style>
         :root {
             --primary-color: #4a90e2;
@@ -11,6 +11,7 @@
             --export-color: #9b59b6;
             --import-color: #34495e;
             --danger-color: #e74c3c;
+            --print-color: #2c3e50;
             --bg-color: #f5f7fa;
             
             --default-table-color: #b81d24;
@@ -19,7 +20,6 @@
             --default-backdrop-color: #2980b9;
             --default-gate-color: #7f8c8d;
             
-            /* 智慧對齊線顏色 */
             --guide-line-color: #ff3b30;
         }
 
@@ -105,6 +105,9 @@
         .btn-red { background-color: var(--danger-color); }
         .btn-red:hover { background-color: #c0392b; }
 
+        .btn-print { background-color: var(--print-color); margin-top: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .btn-print:hover { background-color: #1a252f; }
+
         .btn-obj { padding: 8px; font-size: 12px; }
         .btn-stage { background-color: var(--default-stage-color); }
         .btn-stage:hover { background-color: #d35400; }
@@ -146,7 +149,7 @@
 
         .guest-list-container {
             flex: 1;
-            min-height: 150px;
+            min-height: 120px;
             display: flex;
             flex-direction: column;
         }
@@ -350,17 +353,47 @@
 
         .save-indicator { font-size: 11px; color: #aaa; text-align: right; margin-bottom: 2px; }
 
-        /* 📐 智慧排版對齊輔助虛線元件樣式 */
         .alignment-guide {
-            position: absolute;
-            background: none;
-            border: 0 dashed var(--guide-line-color);
-            pointer-events: none; /* 穿透不影響滑鼠拖曳 */
-            z-index: 9999;
-            display: none;
+            position: absolute; background: none; border: 0 dashed var(--guide-line-color);
+            pointer-events: none; z-index: 9999; display: none;
         }
-        .guide-v { border-left-width: 1px; width: 0; } /* 垂直虛線 */
-        .guide-h { border-top-width: 1px; height: 0; }  /* 水平虛線 */
+        .guide-v { border-left-width: 1px; width: 0; }
+        .guide-h { border-top-width: 1px; height: 0; }
+
+        /* ==========================================================
+           🖨 核心關鍵：智慧列印專用樣式（當按下列印時，瀏覽器會自動套用此區）
+           ========================================================== */
+        @media print {
+            /* 1. 隱藏不必要的網頁操作介面 */
+            #sidebar, 
+            .corner-del-btn, 
+            .resize-handle, 
+            .bottom-toolbar, 
+            .alignment-guide {
+                display: none !important;
+            }
+
+            /* 2. 讓畫布滿版、移除灰色背景網格，改成乾淨省墨的純白色 */
+            body {
+                background-color: #ffffff !important;
+            }
+            #canvas {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                background-color: #ffffff !important;
+                background-image: none !important; /* 拔除網格線 */
+                overflow: visible !important;
+            }
+
+            /* 3. 強制瀏覽器渲染顏色與背景（避免桌子舞台變白色的重要設定） */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -390,13 +423,14 @@
             </div>
 
             <div>
-                <h3>備份紀錄管理</h3>
+                <h3>備份與列印導出</h3>
                 <div class="controls">
                     <button class="btn btn-purple" onclick="exportData()">↓ 匯出目前排位紀錄 (.json)</button>
                     <div class="btn btn-dark">
                         ↑ 匯入排位紀錄檔案 (.json)
                         <input type="file" id="importFile" class="hidden-file-input" accept=".json" onchange="importData(this)">
                     </div>
+                    <button class="btn btn-print" onclick="window.print()">🖨 列印排位成果 / 導出PDF</button>
                     <button class="btn btn-red" onclick="resetAllData()">⚠ 清空所有內容重新製作</button>
                 </div>
             </div>
@@ -434,19 +468,17 @@
         let tableCounter = 0;
         let draggedGuestId = null;
 
-        window.onload = function() {
-            loadFromLocalStorage();
-        };
+        window.onload = function() { loadFromLocalStorage(); };
 
         function saveToLocalStorage() {
             const dataToSave = { guests: guests, tables: tables, customObjects: customObjects, tableCounter: tableCounter };
-            localStorage.setItem('wedding_planner_guides_save', JSON.stringify(dataToSave));
+            localStorage.setItem('wedding_planner_print_save', JSON.stringify(dataToSave));
             const now = new Date();
             document.getElementById('saveTime').innerText = `自動存檔成功 (${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')})`;
         }
 
         function loadFromLocalStorage() {
-            const savedData = localStorage.getItem('wedding_planner_guides_save');
+            const savedData = localStorage.getItem('wedding_planner_print_save');
             if (savedData) {
                 try {
                     const parsed = JSON.parse(savedData);
@@ -456,16 +488,13 @@
                     tableCounter = parsed.tableCounter || 0;
                 } catch(e) { initDefaultLayout(); }
             } else { initDefaultLayout(); }
-            renderGuests();
-            renderTables();
-            renderCustomObjects(); 
+            renderGuests(); renderTables(); renderCustomObjects(); 
         }
 
         function initDefaultLayout() {
             tables = [{ id: "t_1", name: "第 1 桌", seatCount: 12, x: 380, y: 180, fontSize: 16, color: "#b81d24", seats: Array(12).fill(null) }];
             customObjects = [{ id: "obj_init_1", type: "stage", name: "主舞台", x: 300, y: 30, width: 280, height: 90, fontSize: 15, color: "#e67e22", rotate: 0 }];
-            tableCounter = 1;
-            guests = [];
+            tableCounter = 1; guests = [];
         }
 
         function addCustomObject(type, defaultName) {
@@ -476,8 +505,7 @@
             if(type === 'gate') { w = 140; h = 55; defaultColor = "#7f8c8d"; }
 
             customObjects.push({ id: id, type: type, name: defaultName, x: 350, y: 200, width: w, height: h, fontSize: 15, color: defaultColor, rotate: 0 });
-            renderCustomObjects();
-            saveToLocalStorage();
+            renderCustomObjects(); saveToLocalStorage();
         }
 
         function renderCustomObjects() {
@@ -487,73 +515,48 @@
             customObjects.forEach(obj => {
                 const el = document.createElement('div');
                 el.className = `custom-object obj-${obj.type}`;
-                el.id = obj.id; // 給予 DOM 元件專屬 ID 方便比對
-                el.style.left = obj.x + 'px';
-                el.style.top = obj.y + 'px';
-                if(obj.width) el.style.width = obj.width + 'px';
-                if(obj.height) el.style.height = obj.height + 'px';
-                el.style.backgroundColor = obj.color || "#7f8c8d";
-                el.style.transform = `rotate(${obj.rotate || 0}deg)`;
+                el.id = obj.id; el.style.left = obj.x + 'px'; el.style.top = obj.y + 'px';
+                if(obj.width) el.style.width = obj.width + 'px'; if(obj.height) el.style.height = obj.height + 'px';
+                el.style.backgroundColor = obj.color || "#7f8c8d"; el.style.transform = `rotate(${obj.rotate || 0}deg)`;
 
                 const titleSpan = document.createElement('span');
-                titleSpan.className = 'editable-title';
-                titleSpan.innerText = obj.name;
-                titleSpan.contentEditable = true;
-                titleSpan.spellcheck = false;
+                titleSpan.className = 'editable-title'; titleSpan.innerText = obj.name;
+                titleSpan.contentEditable = true; titleSpan.spellcheck = false;
                 titleSpan.style.fontSize = (obj.fontSize || 15) + 'px';
 
                 titleSpan.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-                titleSpan.addEventListener('blur', () => {
-                    obj.name = titleSpan.innerText.trim() || "未命名物件";
-                    titleSpan.innerText = obj.name;
-                    saveToLocalStorage();
-                });
+                titleSpan.addEventListener('blur', () => { obj.name = titleSpan.innerText.trim() || "未命名物件"; titleSpan.innerText = obj.name; saveToLocalStorage(); });
                 titleSpan.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); titleSpan.blur(); } });
 
                 const delBtn = document.createElement('button');
-                delBtn.className = 'corner-del-btn';
-                delBtn.innerHTML = '✕';
+                delBtn.className = 'corner-del-btn'; delBtn.innerHTML = '✕';
                 delBtn.onclick = (e) => { e.stopPropagation(); deleteCustomObject(obj.id); };
                 delBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
-                const resizer = document.createElement('div');
-                resizer.className = 'resize-handle';
+                const resizer = document.createElement('div'); resizer.className = 'resize-handle';
                 setupResizeEvents(resizer, el, obj);
 
-                const toolbarDiv = document.createElement('div');
-                toolbarDiv.className = 'bottom-toolbar';
+                const toolbarDiv = document.createElement('div'); toolbarDiv.className = 'bottom-toolbar';
                 toolbarDiv.addEventListener('mousedown', (e) => { e.stopPropagation(); });
                 
-                const plusBtn = document.createElement('button');
-                plusBtn.className = 'font-btn'; plusBtn.innerText = 'A+';
+                const plusBtn = document.createElement('button'); plusBtn.className = 'font-btn'; plusBtn.innerText = 'A+';
                 plusBtn.onclick = () => { obj.fontSize = (obj.fontSize || 15) + 1; titleSpan.style.fontSize = obj.fontSize + 'px'; saveToLocalStorage(); };
 
-                const minusBtn = document.createElement('button');
-                minusBtn.className = 'font-btn'; minusBtn.innerText = 'A-';
+                const minusBtn = document.createElement('button'); minusBtn.className = 'font-btn'; minusBtn.innerText = 'A-';
                 minusBtn.onclick = () => { if((obj.fontSize || 15) > 9) { obj.fontSize = (obj.fontSize || 15) - 1; titleSpan.style.fontSize = obj.fontSize + 'px'; saveToLocalStorage(); } };
 
-                const rotateBtn = document.createElement('button');
-                rotateBtn.className = 'font-btn btn-rotate'; rotateBtn.innerHTML = '↻ 90°';
-                rotateBtn.onclick = () => {
-                    obj.rotate = ((obj.rotate || 0) + 90) % 360;
-                    el.style.transform = `rotate(${obj.rotate}deg)`;
-                    saveToLocalStorage();
-                };
+                const rotateBtn = document.createElement('button'); rotateBtn.className = 'font-btn btn-rotate'; rotateBtn.innerHTML = '↻ 90°';
+                rotateBtn.onclick = () => { obj.rotate = ((obj.rotate || 0) + 90) % 360; el.style.transform = `rotate(${obj.rotate}deg)`; saveToLocalStorage(); };
 
-                const pickerWrapper = document.createElement('div');
-                pickerWrapper.className = 'color-picker-wrapper';
-                const pickerIcon = document.createElement('span');
-                pickerIcon.className = 'color-picker-icon'; pickerIcon.innerText = '🎨';
-                const colorInput = document.createElement('input');
-                colorInput.type = 'color'; colorInput.className = 'custom-color-input'; colorInput.value = obj.color || "#7f8c8d";
+                const pickerWrapper = document.createElement('div'); pickerWrapper.className = 'color-picker-wrapper';
+                const pickerIcon = document.createElement('span'); pickerIcon.className = 'color-picker-icon'; pickerIcon.innerText = '🎨';
+                const colorInput = document.createElement('input'); colorInput.type = 'color'; colorInput.className = 'custom-color-input'; colorInput.value = obj.color || "#7f8c8d";
                 colorInput.oninput = (e) => { el.style.backgroundColor = e.target.value; obj.color = e.target.value; saveToLocalStorage(); };
 
                 pickerWrapper.appendChild(pickerIcon); pickerWrapper.appendChild(colorInput);
                 toolbarDiv.appendChild(plusBtn); toolbarDiv.appendChild(minusBtn); toolbarDiv.appendChild(rotateBtn); toolbarDiv.appendChild(pickerWrapper);
-
                 el.appendChild(titleSpan); el.appendChild(delBtn); el.appendChild(resizer); el.appendChild(toolbarDiv);
-                makeElementDraggable(el, obj, false);
-                canvas.appendChild(el);
+                makeElementDraggable(el, obj, false); canvas.appendChild(el);
             });
         }
 
@@ -568,20 +571,15 @@
 
             tables.forEach(table => {
                 const container = document.createElement('div');
-                container.className = 'table-container';
-                container.id = table.id; // 綁定 ID 供幾何計算
-                container.style.left = table.x + 'px';
-                container.style.top = table.y + 'px';
+                container.className = 'table-container'; container.id = table.id;
+                container.style.left = table.x + 'px'; container.style.top = table.y + 'px';
 
                 const center = document.createElement('div');
-                center.className = 'table-center';
-                center.style.backgroundColor = table.color || "#b81d24";
+                center.className = 'table-center'; center.style.backgroundColor = table.color || "#b81d24";
                 
                 const titleSpan = document.createElement('span');
-                titleSpan.className = 'editable-title table-title';
-                titleSpan.innerText = table.name;
-                titleSpan.contentEditable = true; titleSpan.spellcheck = false;
-                titleSpan.style.fontSize = (table.fontSize || 16) + 'px';
+                titleSpan.className = 'editable-title table-title'; titleSpan.innerText = table.name;
+                titleSpan.contentEditable = true; titleSpan.spellcheck = false; titleSpan.style.fontSize = (table.fontSize || 16) + 'px';
 
                 titleSpan.addEventListener('mousedown', (e) => { e.stopPropagation(); });
                 titleSpan.addEventListener('blur', () => { table.name = titleSpan.innerText.trim() || "未命名"; titleSpan.innerText = table.name; saveToLocalStorage(); });
@@ -596,25 +594,20 @@
                 toolbarDiv.className = 'bottom-toolbar'; toolbarDiv.style.left = '50%'; toolbarDiv.style.transform = 'translateX(-50%)';
                 toolbarDiv.addEventListener('mousedown', (e) => { e.stopPropagation(); });
                 
-                const plusBtn = document.createElement('button');
-                plusBtn.className = 'font-btn'; plusBtn.innerText = 'A+';
+                const plusBtn = document.createElement('button'); plusBtn.className = 'font-btn'; plusBtn.innerText = 'A+';
                 plusBtn.onclick = () => { table.fontSize = (table.fontSize || 16) + 1; titleSpan.style.fontSize = table.fontSize + 'px'; saveToLocalStorage(); };
 
-                const minusBtn = document.createElement('button');
-                minusBtn.className = 'font-btn'; minusBtn.innerText = 'A-';
+                const minusBtn = document.createElement('button'); minusBtn.className = 'font-btn'; minusBtn.innerText = 'A-';
                 minusBtn.onclick = () => { if((table.fontSize || 16) > 10) { table.fontSize = (table.fontSize || 16) - 1; titleSpan.style.fontSize = table.fontSize + 'px'; saveToLocalStorage(); } };
 
-                const pickerWrapper = document.createElement('div');
-                pickerWrapper.className = 'color-picker-wrapper';
+                const pickerWrapper = document.createElement('div'); pickerWrapper.className = 'color-picker-wrapper';
                 const pickerIcon = document.createElement('span'); pickerIcon.className = 'color-picker-icon'; pickerIcon.innerText = '🎨';
-                const colorInput = document.createElement('input');
-                colorInput.type = 'color'; colorInput.className = 'custom-color-input'; colorInput.value = table.color || "#b81d24";
+                const colorInput = document.createElement('input'); colorInput.type = 'color'; colorInput.className = 'custom-color-input'; colorInput.value = table.color || "#b81d24";
                 colorInput.oninput = (e) => { center.style.backgroundColor = e.target.value; table.color = e.target.value; saveToLocalStorage(); };
 
                 pickerWrapper.appendChild(pickerIcon); pickerWrapper.appendChild(colorInput);
                 toolbarDiv.appendChild(plusBtn); toolbarDiv.appendChild(minusBtn); toolbarDiv.appendChild(pickerWrapper);
-                center.appendChild(titleSpan); center.appendChild(delBtn); center.appendChild(toolbarDiv);
-                container.appendChild(center);
+                center.appendChild(titleSpan); center.appendChild(delBtn); center.appendChild(toolbarDiv); container.appendChild(center);
 
                 const radius = 115; 
                 for (let i = 0; i < 12; i++) {
@@ -625,22 +618,18 @@
                     const sx = 170 + radius * Math.cos(angle) - 26;
                     const sy = 170 + radius * Math.sin(angle) - 26;
                     seat.style.left = `${sx}px`; seat.style.top = `${sy}px`;
-                    setupSeatEvents(seat, table, i);
-                    container.appendChild(seat);
+                    setupSeatEvents(seat, table, i); container.appendChild(seat);
                 }
 
-                makeElementDraggable(container, table, true);
-                canvas.appendChild(container);
+                makeElementDraggable(container, table, true); canvas.appendChild(container);
             });
         }
 
         function setupResizeEvents(handleEl, targetEl, dataBind) {
             handleEl.addEventListener('mousedown', (e) => {
                 e.stopPropagation(); e.preventDefault();
-                const startWidth = dataBind.width || targetEl.offsetWidth;
-                const startHeight = dataBind.height || targetEl.offsetHeight;
-                const startX = e.clientX; const startY = e.clientY;
-                const angleRad = ((dataBind.rotate || 0) * Math.PI) / 180;
+                const startWidth = dataBind.width || targetEl.offsetWidth; const startHeight = dataBind.height || targetEl.offsetHeight;
+                const startX = e.clientX; const startY = e.clientY; const angleRad = ((dataBind.rotate || 0) * Math.PI) / 180;
 
                 function doResize(moveEvent) {
                     const deltaX = moveEvent.clientX - startX; const deltaY = moveEvent.clientY - startY;
@@ -655,71 +644,35 @@
             });
         }
 
-        // 📐 核心對齊計算函式：計算目前拖拉物件與其餘所有物件的靠齊狀態
         function checkAlignment(draggingEl) {
-            const snapThreshold = 5; // 磁吸對齊敏感度 (5像素)
-            const canvas = document.getElementById('canvas');
-            
-            // 獲取目前拖移元件的實際位置幾何資訊
-            let curL = draggingEl.offsetLeft;
-            let curW = draggingEl.offsetWidth;
-            let curH = draggingEl.offsetHeight;
-            let curT = draggingEl.offsetTop;
-            
-            let curR = curL + curW;
-            let curB = curT + curH;
-            let curCX = curL + curW / 2;
-            let curCY = curT + curH / 2;
+            const snapThreshold = 5; const canvas = document.getElementById('canvas');
+            let curL = draggingEl.offsetLeft; let curW = draggingEl.offsetWidth; let curH = draggingEl.offsetHeight; let curT = draggingEl.offsetTop;
+            let curR = curL + curW; let curB = curT + curH; let curCX = curL + curW / 2; let curCY = curT + curH / 2;
 
-            // 預先隱藏所有虛線
             hideAllGuides();
-
-            // 找出畫布上「除了自己以外」的所有可對齊物件
             const allTargets = document.querySelectorAll('.table-container, .custom-object');
-            
             let snapX = null, snapY = null;
             let showVLines = { left: false, center: false, right: false, xVal: 0 };
             let showHLines = { top: false, center: false, bottom: false, yVal: 0 };
 
             allTargets.forEach(target => {
-                if (target.id === draggingEl.id) return; // 跳過自己
+                if (target.id === draggingEl.id) return;
+                let tarL = target.offsetLeft; let tarW = target.offsetWidth; let tarH = target.offsetHeight; let tarT = target.offsetTop;
+                let tarR = tarL + tarW; let tarB = tarT + tarH; let tarCX = tarL + tarW / 2; let tarCY = tarT + tarH / 2;
 
-                let tarL = target.offsetLeft;
-                let tarW = target.offsetWidth;
-                let tarH = target.offsetHeight;
-                let tarT = target.offsetTop;
-                
-                let tarR = tarL + tarW;
-                let tarB = tarT + tarH;
-                let tarCX = tarL + tarW / 2;
-                let tarCY = tarT + tarH / 2;
-
-                // --- 1. 垂直方向對齊檢測 (X軸靠齊，帶出垂直虛線) ---
-                // 左對左
                 if (Math.abs(curL - tarL) < snapThreshold) { snapX = tarL; showVLines.left = true; showVLines.xVal = tarL; }
-                // 左對右
                 else if (Math.abs(curL - tarR) < snapThreshold) { snapX = tarR; showVLines.left = true; showVLines.xVal = tarR; }
-                // 中心對中心
                 else if (Math.abs(curCX - tarCX) < snapThreshold) { snapX = tarCX - curW / 2; showVLines.center = true; showVLines.xVal = tarCX; }
-                // 右對左
                 else if (Math.abs(curR - tarL) < snapThreshold) { snapX = tarL - curW; showVLines.right = true; showVLines.xVal = tarL; }
-                // 右對右
                 else if (Math.abs(curR - tarR) < snapThreshold) { snapX = tarR - curW; showVLines.right = true; showVLines.xVal = tarR; }
 
-                // --- 2. 水平方向對齊檢測 (Y軸靠齊，帶出水平虛線) ---
-                // 頂對頂
                 if (Math.abs(curT - tarT) < snapThreshold) { snapY = tarT; showHLines.top = true; showHLines.yVal = tarT; }
-                // 頂對底
                 else if (Math.abs(curT - tarB) < snapThreshold) { snapY = tarB; showHLines.top = true; showHLines.yVal = tarB; }
-                // 中心對中心
                 else if (Math.abs(curCY - tarCY) < snapThreshold) { snapY = tarCY - curH / 2; showHLines.center = true; showHLines.yVal = tarCY; }
-                // 底對頂
                 else if (Math.abs(curB - tarT) < snapThreshold) { snapY = tarT - curH; showHLines.bottom = true; showHLines.yVal = tarT; }
-                // 底對底
                 else if (Math.abs(curB - tarB) < snapThreshold) { snapY = tarB - curH; showHLines.bottom = true; showHLines.yVal = tarB; }
             });
 
-            // 實施磁吸貼齊、並延伸渲染對齊紅虛線
             if (snapX !== null) {
                 draggingEl.style.left = snapX + 'px';
                 if (showVLines.left) drawGuide('guide-vl', showVLines.xVal, true);
@@ -732,88 +685,54 @@
                 if (showHLines.center) drawGuide('guide-hc', showHLines.yVal, false);
                 if (showHLines.bottom) drawGuide('guide-hb', showHLines.yVal, false);
             }
-
             return { x: snapX !== null ? snapX : curL, y: snapY !== null ? snapY : curT };
         }
 
         function drawGuide(guideId, value, isVertical) {
-            const line = document.getElementById(guideId);
-            if (!line) return;
+            const line = document.getElementById(guideId); if (!line) return;
             line.style.display = 'block';
-            if (isVertical) {
-                line.style.left = value + 'px';
-                line.style.top = '0px';
-                line.style.height = '100%';
-                line.style.width = '0px';
-            } else {
-                line.style.top = value + 'px';
-                line.style.left = '0px';
-                line.style.width = '100%';
-                line.style.height = '0px';
-            }
+            if (isVertical) { line.style.left = value + 'px'; line.style.top = '0px'; line.style.height = '100%'; line.style.width = '0px'; }
+            else { line.style.top = value + 'px'; line.style.left = '0px'; line.style.width = '100%'; line.style.height = '0px'; }
         }
 
-        function hideAllGuides() {
-            document.querySelectorAll('.alignment-guide').forEach(el => el.style.display = 'none');
-        }
+        function hideAllGuides() { document.querySelectorAll('.alignment-guide').forEach(el => el.style.display = 'none'); }
 
-        // 升級版物件拖拉邏輯
         function makeElementDraggable(el, dataBind, isTable) {
-            let isDragging = false;
-            let startX, startY;
-
+            let isDragging = false; let startX, startY;
             el.addEventListener('mousedown', (e) => {
                 if (e.target.classList.contains('seat') || e.target.classList.contains('editable-title') || 
                     e.target.classList.contains('corner-del-btn') || e.target.classList.contains('font-btn') || 
                     e.target.classList.contains('custom-color-input') || e.target.classList.contains('color-picker-wrapper') || 
                     e.target.classList.contains('resize-handle') || e.target.classList.contains('bottom-toolbar')) return;
 
-                isDragging = true;
-                startX = e.clientX - el.offsetLeft;
-                startY = e.clientY - el.offsetTop;
-                el.style.zIndex = 20; 
+                isDragging = true; startX = e.clientX - el.offsetLeft; startY = e.clientY - el.offsetTop; el.style.zIndex = 20; 
             });
 
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
-                let newX = e.clientX - startX;
-                let newY = e.clientY - startY;
-
+                let newX = e.clientX - startX; let newY = e.clientY - startY;
                 if (newX < 0) newX = 0; if (newY < 0) newY = 0;
+                el.style.left = newX + 'px'; el.style.top = newY + 'px';
 
-                el.style.left = newX + 'px';
-                el.style.top = newY + 'px';
-
-                // 📐 每步移動皆動態進行幾何比對，修正位置並畫出紅虛線
                 const finalPos = checkAlignment(el);
-                
-                // 將對齊校正後的正確座標存入資料核心
-                dataBind.x = finalPos.x;
-                dataBind.y = finalPos.y;
+                dataBind.x = finalPos.x; dataBind.y = finalPos.y;
             });
 
             document.addEventListener('mouseup', () => {
-                if (isDragging) {
-                    isDragging = false;
-                    el.style.zIndex = el.classList.contains('custom-object') ? 3 : 1;
-                    hideAllGuides(); // 放開滑鼠立刻清空對齊輔助線
-                    saveToLocalStorage();
-                }
+                if (isDragging) { isDragging = false; el.style.zIndex = el.classList.contains('custom-object') ? 3 : 1; hideAllGuides(); saveToLocalStorage(); }
             });
         }
 
         function resetAllData() {
-            if (!confirm("確定要清空『所有內容（名單、桌位、對齊、顏色配置）』嗎？\n此動作將無法復原！")) return;
-            if (!confirm("再次確認：您真的要刪除目前的全部場地進度，重新製作嗎？")) return;
-            localStorage.removeItem('wedding_planner_guides_save');
-            initDefaultLayout(); renderGuests(); renderTables(); renderCustomObjects();
-            alert("系統已完全重置！");
+            if (!confirm("確定要清空『所有內容』嗎？\n此動作將無法復原！")) return;
+            localStorage.removeItem('wedding_planner_print_save');
+            initDefaultLayout(); renderGuests(); renderTables(); renderCustomObjects(); alert("系統已完全重置！");
         }
 
         function exportData() {
             const dataStr = JSON.stringify({ guests: guests, tables: tables, customObjects: customObjects, tableCounter: tableCounter }, null, 2);
             const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            const exportFileDefaultName = `wedding_layout_guides_${new Date().toISOString().slice(0,10)}.json`;
+            const exportFileDefaultName = `wedding_layout_print_${new Date().toISOString().slice(0,10)}.json`;
             const linkElement = document.createElement('a'); linkElement.setAttribute('href', dataUri); linkElement.setAttribute('download', exportFileDefaultName); linkElement.click();
         }
 
@@ -825,8 +744,7 @@
                     const parsed = JSON.parse(e.target.result);
                     if (parsed.guests && parsed.tables) {
                         guests = parsed.guests; tables = parsed.tables; customObjects = parsed.customObjects || []; tableCounter = parsed.tableCounter || parsed.tables.length;
-                        renderGuests(); renderTables(); renderCustomObjects(); saveToLocalStorage();
-                        alert("紀錄完整還原成功！");
+                        renderGuests(); renderTables(); renderCustomObjects(); saveToLocalStorage(); alert("紀錄完整還原成功！");
                     } else { alert("檔案格式不符。"); }
                 } catch (err) { alert("檔案讀取失敗。"); }
             };
