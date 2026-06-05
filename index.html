@@ -246,7 +246,9 @@ async function finalCheckIn() {
         const isAlreadyCheckedIn = records.some(r => r.name === currentGuest.name);
 
         if (!isAlreadyCheckedIn) {
-            let timeStr = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+            let now = new Date();
+let timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => v < 10 ? '0' + v : v).join(':');
+
             await fetch(API_URL, {
                 method: "POST",
                 body: JSON.stringify({
